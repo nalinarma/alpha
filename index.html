@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alpha</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #0c0c0e;
+  --surface: #141418;
+  --surface2: #1e1e24;
+  --surface3: #28282f;
+  --border: #32323c;
+  --gold: #c9a84c;
+  --gold2: #e8c97a;
+  --text: #edeae2;
+  --muted: #7c7a82;
+  --green: #3dba7a;
+  --blue: #4a9eff;
+  --yellow: #f5c842;
+  --grey: #9a9a9a;
+  --red: #e05c5c;
+  --radius: 12px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: 'Source Sans 3', sans-serif; font-size: 14px; }
+
+/* ── LAYOUT ── */
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 56px;
+  flex-shrink: 0;
+}
+.logo {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: .04em;
+  margin-right: 32px;
+  flex-shrink: 0;
+}
+
+/* ── MAIN TABS ── */
+.main-tabs { display: flex; gap: 2px; }
+.main-tab {
+  padding: 0 20px;
+  height: 56px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all .15s;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.main-tab:hover { color: var(--text); }
+.main-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+
+.topbar-right { margin-left: auto; display: flex; gap: 8px; }
+
+/* ── CONTENT ── */
+.content { flex: 1; overflow-y: auto; padding: 24px; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── YEAR TABS ── */
+.year-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 20px; flex-wrap: wrap;
+}
+.year-btn {
+  padding: 7px 18px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--muted);
+  font-family: 'Source Sans 3', sans-serif; font-size: .82rem; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.year-btn:hover { border-color: var(--gold); color: var(--text); }
+.year-btn.active { background: var(--gold); color: #111; border-color: var(--gold); }
+.add-year-btn {
+  padding: 7px 14px; border-radius: 8px; border: 1px dashed var(--border);
+  background: none; color: var(--muted); cursor: pointer;
+  font-size: .82rem; font-family: 'Source Sans 3', sans-serif;
+  transition: all .15s;
+}
+.add-year-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+/* ── BUTTONS ── */
+.btn {
+  border: none; border-radius: 8px; cursor: pointer;
+  font-family: 'Source Sans 3', sans-serif; font-weight: 600;
+  font-size: .82rem; padding: 8px 16px;
+  transition: all .15s; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-gold { background: var(--gold); color: #111; }
+.btn-gold:hover { background: var(--gold2); }
+.btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
+.btn-danger { background: rgba(224,92,92,.12); color: var(--red); border: 1px solid rgba(224,92,92,.2); }
+.btn-sm { padding: 5px 10px; font-size: .75rem; }
+
+/* ── CARDS ── */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+
+/* ── FORMS / MODALS ── */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,.75); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.modal-bg.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 18px; padding: 28px; width: 95%; max-width: 720px;
+  max-height: 92vh; overflow-y: auto;
+  transform: translateY(20px); transition: transform .2s;
+}
+.modal-bg.open .modal { transform: translateY(0); }
+.modal-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.3rem; color: var(--gold); margin-bottom: 20px;
+}
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group.full { grid-column: span 2; }
+.form-group.third { grid-column: span 1; }
+label { font-size: .7rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .07em; }
+input, select, textarea {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-family: 'Source Sans 3', sans-serif;
+  font-size: .88rem; padding: 8px 12px; outline: none; transition: border-color .15s; width: 100%;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--gold); }
+select option { background: var(--surface2); }
+textarea { resize: vertical; min-height: 60px; }
+.form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.form-section { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--gold); margin: 16px 0 8px; grid-column: span 2; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+
+/* ── STATUS COLORS ── */
+.status-in-process   { background: rgba(255,255,255,.08); color: #ddd; border: 1px solid rgba(255,255,255,.15); }
+.status-op-pending   { background: rgba(245,200,66,.15); color: var(--yellow); border: 1px solid rgba(245,200,66,.3); }
+.status-deal-close   { background: rgba(74,158,255,.12); color: var(--blue); border: 1px solid rgba(74,158,255,.25); }
+.status-dead-deal    { background: rgba(154,154,154,.1); color: var(--grey); border: 1px solid rgba(154,154,154,.2); }
+.status-done-pay     { background: rgba(61,186,122,.12); color: var(--green); border: 1px solid rgba(61,186,122,.25); }
+.status-pill {
+  display: inline-block; padding: 3px 10px; border-radius: 20px;
+  font-size: .7rem; font-weight: 700; white-space: nowrap;
+}
+
+/* ── DEAL TABLE ── */
+.deal-section { margin-bottom: 28px; }
+.month-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1rem; color: var(--gold2);
+  margin-bottom: 10px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+th {
+  text-align: left; font-size: .65rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  white-space: nowrap; background: var(--surface2); font-weight: 600;
+}
+td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface2); }
+.deal-row { cursor: pointer; }
+
+/* ── EXPENSE GRID ── */
+/* Expense table - categories on left, months across top, total on right */
+.exp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.exp-table th {
+  background: var(--surface2);
+  padding: 9px 12px;
+  font-size: .65rem; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .07em;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  text-align: center; white-space: nowrap;
+}
+.exp-table th:first-child { text-align: left; min-width: 160px; }
+.exp-table th:last-child { color: var(--gold); border-right: none; }
+.exp-cat-cell {
+  padding: 7px 14px;
+  font-weight: 600; color: var(--text);
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: var(--surface2);
+  white-space: nowrap;
+}
+.exp-input-cell {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 0; min-width: 78px;
+}
+.exp-input-cell input {
+  width: 100%; padding: 7px 8px;
+  background: transparent; border: none;
+  color: var(--text); font-size: .8rem; text-align: right;
+  font-family: 'Source Sans 3', sans-serif; outline: none;
+}
+.exp-input-cell input:focus { background: rgba(201,168,76,.07); }
+.exp-row-total {
+  padding: 7px 12px;
+  font-weight: 700; color: var(--green);
+  text-align: right; white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.exp-footer-label {
+  padding: 10px 14px;
+  font-family: 'Playfair Display', serif;
+  font-weight: 700; color: var(--gold);
+  border-right: 1px solid var(--border);
+  border-top: 2px solid var(--border);
+  background: var(--surface2);
+}
+.exp-col-total {
+  padding: 10px 8px;
+  font-weight: 700; color: var(--gold2);
+  text-align: right; white-space: nowrap;
+  border-right: 1px solid var(--border);
+  border-top: 2px solid var(--border);
+  background: var(--surface2);
+  font-size: .82rem;
+}
+.exp-grand-cell {
+  padding: 10px 12px;
+  font-weight: 700; color: var(--gold);
+  text-align: right;
+  border-top: 2px solid var(--border);
+  background: var(--surface2);
+  font-size: .9rem;
+}
+
+/* ── ACCOUNTING ── */
+.agent-card { padding: 20px 24px; margin-bottom: 16px; }
+.agent-name { font-family: 'Playfair Display', serif; font-size: 1.15rem; color: var(--gold); }
+.agent-meta { font-size: .78rem; color: var(--muted); margin-top: 4px; }
+.agent-pay-table { margin-top: 16px; }
+.pay-total-row td { font-weight: 700; color: var(--green); border-top: 2px solid var(--border); }
+
+/* ── MOBILE NAV ── */
+.mobile-tabs {
+  display: none; background: var(--surface);
+  border-top: 1px solid var(--border);
+  position: fixed; bottom: 0; left: 0; right: 0;
+  justify-content: space-around; padding: 8px 0 16px; z-index: 100;
+}
+.mob-tab {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  border: none; background: none; color: var(--muted);
+  font-family: 'Source Sans 3', sans-serif; font-size: .62rem; font-weight: 600;
+  cursor: pointer; padding: 4px 12px; text-transform: uppercase; letter-spacing: .05em;
+}
+.mob-tab.active { color: var(--gold); }
+.mob-icon { font-size: 1.2rem; }
+
+@media (max-width: 768px) {
+  .main-tabs { display: none; }
+  .mobile-tabs { display: flex; }
+  .content { padding: 16px 12px 80px; }
+  .topbar { padding: 0 16px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-group.full, .form-section { grid-column: span 1; }
+  .exp-table { font-size: .75rem; }
+  .exp-cat-cell { min-width: 120px; }
+  .exp-input-cell { min-width: 65px; }
+  .modal { padding: 20px 16px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="logo">Alpha</div>
+    <div class="main-tabs">
+      <button class="main-tab active" onclick="showTab('deal')">Deal Control</button>
+      <button class="main-tab" onclick="showTab('expense')">Expense Control</button>
+      <button class="main-tab" onclick="showTab('accounting')">Accounting</button>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ Backup</button>
+      <label>
+        <div class="btn btn-ghost btn-sm" style="cursor:pointer;">⬆ Restore</div>
+        <input type="file" accept=".xlsx" style="display:none;" onchange="importData(event)">
+      </label>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- ── DEAL CONTROL ── -->
+    <div id="tab-deal" class="tab-panel active">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div class="year-bar" id="deal-year-bar" style="margin-bottom:0;"></div>
+        <button class="btn btn-gold" onclick="openAddDeal()">+ New Deal</button>
+      </div>
+      <div id="deal-content"></div>
+    </div>
+
+    <!-- ── EXPENSE CONTROL ── -->
+    <div id="tab-expense" class="tab-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div class="year-bar" id="exp-year-bar" style="margin-bottom:0;"></div>
+      </div>
+      <div id="expense-content"></div>
+    </div>
+
+    <!-- ── ACCOUNTING ── -->
+    <div id="tab-accounting" class="tab-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div class="year-bar" id="acc-year-bar" style="margin-bottom:0;"></div>
+        <button class="btn btn-gold" onclick="openModal('modal-add-agent')">+ Add Agent</button>
+      </div>
+      <div id="accounting-content"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MOBILE TABS -->
+<nav class="mobile-tabs">
+  <button class="mob-tab active" onclick="showTab('deal');setMobTab(this)"><span class="mob-icon">📋</span>Deals</button>
+  <button class="mob-tab" onclick="showTab('expense');setMobTab(this)"><span class="mob-icon">💸</span>Expenses</button>
+  <button class="mob-tab" onclick="showTab('accounting');setMobTab(this)"><span class="mob-icon">📊</span>Accounting</button>
+</nav>
+
+<!-- ══════════ MODALS ══════════ -->
+
+<!-- ADD / EDIT DEAL -->
+<div class="modal-bg" id="modal-add-deal">
+  <div class="modal">
+    <div class="modal-title" id="deal-modal-title">New Deal</div>
+    <input type="hidden" id="d-id">
+    <div class="form-grid">
+      <div class="form-section">Deal Info</div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="d-status">
+          <option value="in-process">In Process</option>
+          <option value="op-pending">OP Pending</option>
+          <option value="deal-close">Deal Close</option>
+          <option value="dead-deal">Dead Deal</option>
+          <option value="done-pay">Done / Pay Agent</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Deal Control #</label><input id="d-num" placeholder="0126001"></div>
+      <div class="form-group"><label>Date</label><input id="d-date" type="date"></div>
+      <div class="form-group"><label>Client Name</label><input id="d-client" placeholder="Full name"></div>
+      <div class="form-group full"><label>Address</label><input id="d-address" placeholder="Street address"></div>
+      <div class="form-group"><label>Apt #</label><input id="d-apt" placeholder="Apt 1A"></div>
+      <div class="form-group"><label>MGMT</label><input id="d-mgmt" placeholder="Management co."></div>
+      <div class="form-group"><label>BLDG Code</label><input id="d-bldg" placeholder="Building code"></div>
+      <div class="form-group"><label>Move In Date</label><input id="d-movein" type="date"></div>
+
+      <div class="form-section">Financial</div>
+      <div class="form-group"><label>Rent ($)</label><input id="d-rent" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>FEE ($)</label><input id="d-fee" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Fee Paid On</label><input id="d-fee-paid-on" type="date"></div>
+      <div class="form-group"><label>Fee Paid By Client ($)</label><input id="d-fee-by-client" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Op Paid By MGMT ($)</label><input id="d-op-mgmt" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Agent</label><input id="d-agent" placeholder="Agent name"></div>
+      <div class="form-group"><label>Gross COMM ($)</label><input id="d-gross" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>TIP ($)</label><input id="d-tip" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>TIP Reimbursed ($)</label><input id="d-tip-reimb" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>NET ($)</label><input id="d-net" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Agent Pay ($)</label><input id="d-agent-pay" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Check #</label><input id="d-check" placeholder="Check number"></div>
+      <div class="form-group"><label>DOSE</label><input id="d-dose" placeholder="DOSE"></div>
+
+      <div class="form-section">Tenant Info</div>
+      <div class="form-group"><label>Tenant Phone</label><input id="d-tenant-phone" type="tel" placeholder="(555) 000-0000"></div>
+      <div class="form-group"><label>Tenant Email</label><input id="d-tenant-email" type="email" placeholder="tenant@email.com"></div>
+      <div class="form-group full"><label>Notes</label><textarea id="d-notes" placeholder="Any additional notes..."></textarea></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-deal')">Cancel</button>
+      <button class="btn btn-gold" id="save-deal-btn" onclick="saveDeal()">Save Deal</button>
+    </div>
+  </div>
+</div>
+
+<!-- VIEW / EDIT DEAL -->
+<div class="modal-bg" id="modal-view-deal">
+  <div class="modal" style="max-width:800px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div class="modal-title" id="view-deal-title" style="margin-bottom:0;"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="editCurrentDeal()">✏️ Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-view-deal')">✕</button>
+      </div>
+    </div>
+    <div id="deal-view-body"></div>
+  </div>
+</div>
+
+<!-- ADD AGENT -->
+<div class="modal-bg" id="modal-add-agent">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-title">Add Agent</div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Full Name</label><input id="ag-name" placeholder="First Last"></div>
+      <div class="form-group full"><label>Address</label><input id="ag-address" placeholder="Street address"></div>
+      <div class="form-group"><label>Started</label><input id="ag-started" type="date"></div>
+      <div class="form-group"><label>SS #</label><input id="ag-ss" placeholder="XXX-XX-XXXX"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-agent')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveAgent()">Add Agent</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD PAYMENT -->
+<div class="modal-bg" id="modal-add-payment">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-title">Add Payment</div>
+    <input type="hidden" id="pay-agent-id">
+    <div class="form-grid">
+      <div class="form-group"><label>Date</label><input id="pay-date" type="date"></div>
+      <div class="form-group"><label>Check #</label><input id="pay-check" placeholder="Check number"></div>
+      <div class="form-group full"><label>Amount ($)</label><input id="pay-amount" type="number" placeholder="0.00"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-payment')">Cancel</button>
+      <button class="btn btn-gold" onclick="savePayment()">Add Payment</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════ DATA ══════════
+let db = JSON.parse(localStorage.getItem('alpha-db') || 'null');
+if (!db) {
+  db = {
+    deals: [],
+    dealYears: [2026],
+    expenseYears: [2026],
+    expenses: {},   // key: "year_row_month" → value
+    agents: [],
+    accYears: [2026],
+  };
+  saveDB();
+}
+// Ensure arrays exist (backwards compat)
+if (!db.dealYears) db.dealYears = [2026];
+if (!db.expenseYears) db.expenseYears = [2026];
+if (!db.accYears) db.accYears = [2026];
+if (!db.expenses) db.expenses = {};
+
+function saveDB() { localStorage.setItem('alpha-db', JSON.stringify(db)); }
+
+// ══════════ STATE ══════════
+let activeDealYear = db.dealYears[0] || 2026;
+let activeExpYear = db.expenseYears[0] || 2026;
+let activeAccYear = db.accYears[0] || 2026;
+let viewingDealId = null;
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const EXP_ROWS = ['Rent','SBA','NTN','Fedex','Insurance','Payroll','Aigra Rama Sunny','Prop Shark','Realty MX','V3','Accountant','Street Easy','DocuSign','Google','MISC','Office Supplies','Food & Entertainment','Legal Fees','Services'];
+
+const STATUS_MAP = {
+  'in-process': { label: 'In Process', cls: 'status-in-process' },
+  'op-pending':  { label: 'OP Pending', cls: 'status-op-pending' },
+  'deal-close':  { label: 'Deal Close', cls: 'status-deal-close' },
+  'dead-deal':   { label: 'Dead Deal',  cls: 'status-dead-deal' },
+  'done-pay':    { label: 'Done / Pay Agent', cls: 'status-done-pay' },
+};
+
+// ══════════ NAV ══════════
+function showTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.main-tab').forEach(t => {
+    if (t.textContent.toLowerCase().includes(tab === 'deal' ? 'deal' : tab === 'expense' ? 'expense' : 'account'))
+      t.classList.add('active');
+  });
+  if (tab === 'deal') renderDeals();
+  if (tab === 'expense') renderExpenses();
+  if (tab === 'accounting') renderAccounting();
+}
+function setMobTab(el) {
+  document.querySelectorAll('.mob-tab').forEach(m => m.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ══════════ MODALS ══════════
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+document.querySelectorAll('.modal-bg').forEach(bg => {
+  bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
+});
+
+// ══════════ DEAL CONTROL ══════════
+function renderDealYearBar() {
+  const bar = document.getElementById('deal-year-bar');
+  bar.innerHTML = db.dealYears.map(y =>
+    `<button class="year-btn ${y === activeDealYear ? 'active' : ''}" onclick="setDealYear(${y})">${y}</button>`
+  ).join('') + `<button class="add-year-btn" onclick="addDealYear()">+ Year</button>`;
+}
+
+function setDealYear(y) {
+  activeDealYear = y;
+  renderDealYearBar();
+  renderDeals();
+}
+
+function addDealYear() {
+  const next = Math.max(...db.dealYears) + 1;
+  db.dealYears.push(next);
+  saveDB();
+  setDealYear(next);
+}
+
+function renderDeals() {
+  renderDealYearBar();
+  const content = document.getElementById('deal-content');
+
+  // Filter deals for this year
+  const yearDeals = db.deals.filter(d => {
+    if (!d.date) return false;
+    return new Date(d.date).getFullYear() === activeDealYear;
+  });
+
+  if (yearDeals.length === 0) {
+    content.innerHTML = `<div class="card" style="padding:40px;text-align:center;color:var(--muted);">
+      <div style="font-size:2rem;margin-bottom:10px;">📋</div>
+      <div>No deals for ${activeDealYear}. Click <strong>+ New Deal</strong> to add one.</div>
+    </div>`;
+    return;
+  }
+
+  // Group by month
+  const byMonth = {};
+  yearDeals.forEach(d => {
+    const m = new Date(d.date).getMonth();
+    if (!byMonth[m]) byMonth[m] = [];
+    byMonth[m].push(d);
+  });
+
+  // Sort each month by deal control number
+  Object.values(byMonth).forEach(arr => arr.sort((a, b) => {
+    const an = String(a.num || '').padStart(20, '0');
+    const bn = String(b.num || '').padStart(20, '0');
+    return an.localeCompare(bn);
+  }));
+
+  content.innerHTML = Object.keys(byMonth).sort((a,b) => a-b).map(mi => {
+    const deals = byMonth[mi];
+    const rows = deals.map(d => {
+      const st = STATUS_MAP[d.status] || STATUS_MAP['in-process'];
+      return `<tr class="deal-row" onclick="viewDeal('${d.id}')">
+        <td><span class="status-pill ${st.cls}">${st.label}</span></td>
+        <td style="font-weight:700;color:var(--gold);font-family:'Playfair Display',serif;">${d.num || '—'}</td>
+        <td>${d.date || '—'}</td>
+        <td style="font-weight:600;">${d.client || '—'}</td>
+        <td>${d.address || '—'}${d.apt ? ' #'+d.apt : ''}</td>
+        <td>${d.mgmt || '—'}</td>
+        <td style="color:var(--green);">${d.fee ? '$'+Number(d.fee).toLocaleString() : '—'}</td>
+        <td>${d.agent || '—'}</td>
+        <td style="color:var(--gold);">${d.net ? '$'+Number(d.net).toLocaleString() : '—'}</td>
+        <td style="white-space:normal;max-width:120px;font-size:.75rem;color:var(--muted);">${(d.notes||'').substring(0,40)}${d.notes&&d.notes.length>40?'…':''}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="deal-section">
+      <div class="month-title">${MONTHS[mi]} ${activeDealYear}</div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Status</th><th>Deal #</th><th>Date</th><th>Client</th><th>Address</th>
+              <th>MGMT</th><th>Fee</th><th>Agent</th><th>NET</th><th>Notes</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function clearDealForm() {
+  ['d-id','d-num','d-date','d-client','d-address','d-apt','d-mgmt','d-bldg',
+   'd-movein','d-rent','d-fee','d-fee-paid-on','d-fee-by-client','d-op-mgmt',
+   'd-agent','d-gross','d-tip','d-tip-reimb','d-net','d-agent-pay','d-check',
+   'd-dose','d-notes','d-tenant-phone','d-tenant-email'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('d-status').value = 'in-process';
+  document.getElementById('d-date').value = todayStr();
+  document.getElementById('deal-modal-title').textContent = 'New Deal';
+}
+
+function openAddDeal() {
+  clearDealForm();
+  openModal('modal-add-deal');
+}
+
+function saveDeal() {
+  const id = document.getElementById('d-id').value || ('deal-' + Date.now());
+  const deal = {
+    id,
+    status: document.getElementById('d-status').value,
+    num: document.getElementById('d-num').value.trim(),
+    date: document.getElementById('d-date').value,
+    client: document.getElementById('d-client').value.trim(),
+    address: document.getElementById('d-address').value.trim(),
+    apt: document.getElementById('d-apt').value.trim(),
+    mgmt: document.getElementById('d-mgmt').value.trim(),
+    bldg: document.getElementById('d-bldg').value.trim(),
+    movein: document.getElementById('d-movein').value,
+    rent: document.getElementById('d-rent').value,
+    fee: document.getElementById('d-fee').value,
+    feePaidOn: document.getElementById('d-fee-paid-on').value,
+    feeByClient: document.getElementById('d-fee-by-client').value,
+    opMgmt: document.getElementById('d-op-mgmt').value,
+    agent: document.getElementById('d-agent').value.trim(),
+    gross: document.getElementById('d-gross').value,
+    tip: document.getElementById('d-tip').value,
+    tipReimb: document.getElementById('d-tip-reimb').value,
+    net: document.getElementById('d-net').value,
+    agentPay: document.getElementById('d-agent-pay').value,
+    check: document.getElementById('d-check').value.trim(),
+    dose: document.getElementById('d-dose').value.trim(),
+    notes: document.getElementById('d-notes').value.trim(),
+    tenantPhone: document.getElementById('d-tenant-phone').value.trim(),
+    tenantEmail: document.getElementById('d-tenant-email').value.trim(),
+  };
+
+  const existing = db.deals.findIndex(d => d.id === id);
+  if (existing >= 0) db.deals[existing] = deal;
+  else db.deals.push(deal);
+
+  // Ensure year exists
+  const yr = deal.date ? new Date(deal.date).getFullYear() : activeDealYear;
+  if (!db.dealYears.includes(yr)) { db.dealYears.push(yr); db.dealYears.sort(); }
+
+  saveDB();
+  closeModal('modal-add-deal');
+  activeDealYear = yr;
+  renderDeals();
+}
+
+function viewDeal(id) {
+  const d = db.deals.find(x => x.id === id);
+  if (!d) return;
+  viewingDealId = id;
+  const st = STATUS_MAP[d.status] || STATUS_MAP['in-process'];
+  document.getElementById('view-deal-title').textContent = d.num ? `Deal #${d.num}` : 'Deal Details';
+
+  const field = (label, val) => val ? `<div style="margin-bottom:8px;">
+    <div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:2px;">${label}</div>
+    <div style="font-weight:600;">${val}</div>
+  </div>` : '';
+
+  const money = v => v ? '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:2}) : '—';
+
+  document.getElementById('deal-view-body').innerHTML = `
+    <div style="margin-bottom:16px;"><span class="status-pill ${st.cls}" style="font-size:.82rem;padding:5px 14px;">${st.label}</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px 24px;">
+      ${field('Deal Control #', d.num)}
+      ${field('Date', fmtDate(d.date))}
+      ${field('Client Name', d.client)}
+      ${field('Address', d.address + (d.apt ? ' #'+d.apt : ''))}
+      ${field('MGMT', d.mgmt)}
+      ${field('BLDG Code', d.bldg)}
+      ${field('Move In Date', fmtDate(d.movein))}
+      ${field('Rent', money(d.rent))}
+      ${field('FEE', money(d.fee))}
+      ${field('Fee Paid On', fmtDate(d.feePaidOn))}
+      ${field('Fee Paid By Client', money(d.feeByClient))}
+      ${field('Op Paid By MGMT', money(d.opMgmt))}
+      ${field('Agent', d.agent)}
+      ${field('Gross COMM', money(d.gross))}
+      ${field('TIP', money(d.tip))}
+      ${field('TIP Reimbursed', money(d.tipReimb))}
+      ${field('NET', money(d.net))}
+      ${field('Agent Pay', money(d.agentPay))}
+      ${field('Check #', d.check)}
+      ${field('DOSE', d.dose)}
+      ${field('Tenant Phone', d.tenantPhone)}
+      ${field('Tenant Email', d.tenantEmail)}
+    </div>
+    ${d.notes ? `<div style="margin-top:16px;padding:12px 16px;background:var(--surface2);border-radius:10px;"><div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">Notes</div><div style="font-size:.88rem;line-height:1.6;">${d.notes}</div></div>` : ''}
+    <div style="margin-top:16px;text-align:right;">
+      <button class="btn btn-danger btn-sm" onclick="deleteDeal('${d.id}')">🗑 Delete Deal</button>
+    </div>`;
+
+  openModal('modal-view-deal');
+}
+
+function editCurrentDeal() {
+  if (!viewingDealId) return;
+  const d = db.deals.find(x => x.id === viewingDealId);
+  if (!d) return;
+  closeModal('modal-view-deal');
+  document.getElementById('deal-modal-title').textContent = 'Edit Deal';
+  document.getElementById('d-id').value = d.id;
+  document.getElementById('d-status').value = d.status || 'in-process';
+  document.getElementById('d-num').value = d.num || '';
+  document.getElementById('d-date').value = d.date || '';
+  document.getElementById('d-client').value = d.client || '';
+  document.getElementById('d-address').value = d.address || '';
+  document.getElementById('d-apt').value = d.apt || '';
+  document.getElementById('d-mgmt').value = d.mgmt || '';
+  document.getElementById('d-bldg').value = d.bldg || '';
+  document.getElementById('d-movein').value = d.movein || '';
+  document.getElementById('d-rent').value = d.rent || '';
+  document.getElementById('d-fee').value = d.fee || '';
+  document.getElementById('d-fee-paid-on').value = d.feePaidOn || '';
+  document.getElementById('d-fee-by-client').value = d.feeByClient || '';
+  document.getElementById('d-op-mgmt').value = d.opMgmt || '';
+  document.getElementById('d-agent').value = d.agent || '';
+  document.getElementById('d-gross').value = d.gross || '';
+  document.getElementById('d-tip').value = d.tip || '';
+  document.getElementById('d-tip-reimb').value = d.tipReimb || '';
+  document.getElementById('d-net').value = d.net || '';
+  document.getElementById('d-agent-pay').value = d.agentPay || '';
+  document.getElementById('d-check').value = d.check || '';
+  document.getElementById('d-dose').value = d.dose || '';
+  document.getElementById('d-notes').value = d.notes || '';
+  document.getElementById('d-tenant-phone').value = d.tenantPhone || '';
+  document.getElementById('d-tenant-email').value = d.tenantEmail || '';
+  openModal('modal-add-deal');
+}
+
+function deleteDeal(id) {
+  if (!confirm('Delete this deal? This cannot be undone.')) return;
+  db.deals = db.deals.filter(d => d.id !== id);
+  saveDB();
+  closeModal('modal-view-deal');
+  renderDeals();
+}
+
+// ══════════ EXPENSE CONTROL ══════════
+function renderExpYearBar() {
+  const bar = document.getElementById('exp-year-bar');
+  bar.innerHTML = db.expenseYears.map(y =>
+    `<button class="year-btn ${y === activeExpYear ? 'active' : ''}" onclick="setExpYear(${y})">${y}</button>`
+  ).join('') + `<button class="add-year-btn" onclick="addExpYear()">+ Year</button>`;
+}
+
+function setExpYear(y) {
+  activeExpYear = y;
+  renderExpYearBar();
+  renderExpenses();
+}
+
+function addExpYear() {
+  const next = Math.max(...db.expenseYears) + 1;
+  db.expenseYears.push(next);
+  saveDB();
+  setExpYear(next);
+}
+
+function getExpKey(year, rowIdx, monthIdx) {
+  return `exp_${year}_${rowIdx}_${monthIdx}`;
+}
+
+function saveExpCell(year, rowIdx, monthIdx, value) {
+  const key = getExpKey(year, rowIdx, monthIdx);
+  const val = parseFloat(value);
+  if (!isNaN(val) && val > 0) db.expenses[key] = val;
+  else delete db.expenses[key];
+  saveDB();
+  updateExpTotals(year, rowIdx, monthIdx);
+}
+
+function updateExpTotals(year, rowIdx, monthIdx) {
+  // Row total
+  let rowTotal = 0;
+  for (let m = 0; m < 12; m++) rowTotal += db.expenses[getExpKey(year, rowIdx, m)] || 0;
+  const rtEl = document.getElementById(`exp-rowtotal-${year}-${rowIdx}`);
+  if (rtEl) rtEl.textContent = rowTotal > 0 ? fmtMoney(rowTotal) : '—';
+
+  // Column total
+  let colTotal = 0;
+  for (let r = 0; r < EXP_ROWS.length; r++) colTotal += db.expenses[getExpKey(year, r, monthIdx)] || 0;
+  const ctEl = document.getElementById(`exp-coltotal-${year}-${monthIdx}`);
+  if (ctEl) ctEl.textContent = colTotal > 0 ? fmtMoney(colTotal) : '—';
+
+  // Grand total
+  let grand = 0;
+  for (let r = 0; r < EXP_ROWS.length; r++)
+    for (let m = 0; m < 12; m++)
+      grand += db.expenses[getExpKey(year, r, m)] || 0;
+  const gtEl = document.getElementById(`exp-grand-${year}`);
+  if (gtEl) gtEl.textContent = grand > 0 ? fmtMoney(grand) : '—';
+}
+
+function renderExpenses() {
+  renderExpYearBar();
+  const content = document.getElementById('expense-content');
+  const y = activeExpYear;
+
+  // Header row: Category | Jan | Feb | ... | Dec | Total
+  let html = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+  <table class="exp-table">
+    <thead><tr>
+      <th>Category</th>
+      ${MONTHS_SHORT.map(m => `<th>${m}</th>`).join('')}
+      <th>Total</th>
+    </tr></thead>
+    <tbody>`;
+
+  // One row per expense category
+  EXP_ROWS.forEach((row, ri) => {
+    let rowTotal = 0;
+    for (let m = 0; m < 12; m++) rowTotal += db.expenses[getExpKey(y, ri, m)] || 0;
+
+    html += `<tr>
+      <td class="exp-cat-cell">${row}</td>`;
+
+    for (let mi = 0; mi < 12; mi++) {
+      const key = getExpKey(y, ri, mi);
+      const val = db.expenses[key] || '';
+      html += `<td class="exp-input-cell">
+        <input type="number" min="0" step="0.01" value="${val}" placeholder=""
+          onchange="saveExpCell(${y},${ri},${mi},this.value)"
+          id="exp-cell-${y}-${ri}-${mi}">
+      </td>`;
+    }
+
+    html += `<td class="exp-row-total" id="exp-rowtotal-${y}-${ri}">${rowTotal > 0 ? fmtMoney(rowTotal) : '—'}</td>
+    </tr>`;
+  });
+
+  // Footer: monthly column totals
+  html += `</tbody><tfoot><tr>
+    <td class="exp-footer-label">Monthly Total</td>`;
+
+  let grand = 0;
+  for (let mi = 0; mi < 12; mi++) {
+    let colTotal = 0;
+    for (let ri = 0; ri < EXP_ROWS.length; ri++) {
+      const v = db.expenses[getExpKey(y, ri, mi)] || 0;
+      colTotal += v;
+      grand += v;
+    }
+    html += `<td class="exp-col-total" id="exp-coltotal-${y}-${mi}">${colTotal > 0 ? fmtMoney(colTotal) : '—'}</td>`;
+  }
+
+  html += `<td class="exp-grand-cell" id="exp-grand-${y}">${grand > 0 ? fmtMoney(grand) : '—'}</td>
+  </tr></tfoot></table></div>`;
+
+  content.innerHTML = html;
+}
+
+// ══════════ ACCOUNTING ══════════
+function renderAccYearBar() {
+  const bar = document.getElementById('acc-year-bar');
+  bar.innerHTML = db.accYears.map(y =>
+    `<button class="year-btn ${y === activeAccYear ? 'active' : ''}" onclick="setAccYear(${y})">${y}</button>`
+  ).join('') + `<button class="add-year-btn" onclick="addAccYear()">+ Year</button>`;
+}
+
+function setAccYear(y) {
+  activeAccYear = y;
+  renderAccYearBar();
+  renderAccounting();
+}
+
+function addAccYear() {
+  const next = Math.max(...db.accYears) + 1;
+  db.accYears.push(next);
+  saveDB();
+  setAccYear(next);
+}
+
+function renderAccounting() {
+  renderAccYearBar();
+  const content = document.getElementById('accounting-content');
+  if (db.agents.length === 0) {
+    content.innerHTML = `<div class="card" style="padding:40px;text-align:center;color:var(--muted);">
+      <div style="font-size:2rem;margin-bottom:10px;">👤</div>
+      <div>No agents yet. Click <strong>+ Add Agent</strong> to create one.</div>
+    </div>`;
+    return;
+  }
+
+  content.innerHTML = db.agents.map(agent => {
+    const payments = (agent.payments || []).filter(p => {
+      if (!p.date) return true;
+      return new Date(p.date).getFullYear() === activeAccYear;
+    }).sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
+    const total = payments.reduce((s,p) => s + (parseFloat(p.amount)||0), 0);
+
+    const payRows = payments.map(p => `<tr>
+      <td>${fmtDate(p.date)}</td>
+      <td>${p.check || '—'}</td>
+      <td style="color:var(--green);font-weight:600;">${fmtMoney(parseFloat(p.amount)||0)}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deletePayment('${agent.id}','${p.id}')">✕</button></td>
+    </tr>`).join('');
+
+    const totalRow = payments.length > 0 ? `<tr class="pay-total-row">
+      <td colspan="2" style="font-weight:700;color:var(--gold);">Total ${activeAccYear}</td>
+      <td style="color:var(--green);font-weight:700;">${fmtMoney(total)}</td>
+      <td></td>
+    </tr>` : '';
+
+    return `<div class="card agent-card" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div class="agent-name">${agent.name}</div>
+          <div class="agent-meta">${agent.address ? agent.address + ' · ' : ''}${agent.started ? 'Started: ' + fmtDate(agent.started) + ' · ' : ''}${agent.ss ? 'SS: ' + agent.ss : ''}</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-gold btn-sm" onclick="openAddPayment('${agent.id}')">+ Payment</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAgent('${agent.id}')">🗑</button>
+        </div>
+      </div>
+      <div class="agent-pay-table">
+        <table>
+          <thead><tr><th>Date</th><th>Check #</th><th>Amount</th><th></th></tr></thead>
+          <tbody>
+            ${payRows || `<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px;">No payments for ${activeAccYear}</td></tr>`}
+            ${totalRow}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function saveAgent() {
+  const name = document.getElementById('ag-name').value.trim();
+  if (!name) { alert('Please enter agent name.'); return; }
+  db.agents.push({
+    id: 'ag-' + Date.now(),
+    name,
+    address: document.getElementById('ag-address').value.trim(),
+    started: document.getElementById('ag-started').value,
+    ss: document.getElementById('ag-ss').value.trim(),
+    payments: []
+  });
+  saveDB();
+  closeModal('modal-add-agent');
+  renderAccounting();
+}
+
+function deleteAgent(id) {
+  if (!confirm('Delete this agent and all their payments?')) return;
+  db.agents = db.agents.filter(a => a.id !== id);
+  saveDB(); renderAccounting();
+}
+
+function openAddPayment(agentId) {
+  document.getElementById('pay-agent-id').value = agentId;
+  document.getElementById('pay-date').value = todayStr();
+  document.getElementById('pay-check').value = '';
+  document.getElementById('pay-amount').value = '';
+  openModal('modal-add-payment');
+}
+
+function savePayment() {
+  const agentId = document.getElementById('pay-agent-id').value;
+  const agent = db.agents.find(a => a.id === agentId);
+  if (!agent) return;
+  const amount = parseFloat(document.getElementById('pay-amount').value);
+  if (!amount) { alert('Please enter an amount.'); return; }
+  if (!agent.payments) agent.payments = [];
+  agent.payments.push({
+    id: 'pay-' + Date.now(),
+    date: document.getElementById('pay-date').value,
+    check: document.getElementById('pay-check').value.trim(),
+    amount
+  });
+  saveDB();
+  closeModal('modal-add-payment');
+  renderAccounting();
+}
+
+function deletePayment(agentId, payId) {
+  const agent = db.agents.find(a => a.id === agentId);
+  if (!agent) return;
+  agent.payments = agent.payments.filter(p => p.id !== payId);
+  saveDB(); renderAccounting();
+}
+
+// ══════════ BACKUP / RESTORE ══════════
+function exportData() {
+  const wb = XLSX.utils.book_new();
+
+  // Deals
+  const dealRows = db.deals.map(d => ({
+    ID:d.id, Status:d.status, DealNum:d.num, Date:d.date, Client:d.client,
+    Address:d.address, Apt:d.apt, MGMT:d.mgmt, BLDGCode:d.bldg,
+    MoveIn:d.movein, Rent:d.rent, Fee:d.fee, FeePaidOn:d.feePaidOn,
+    FeeByClient:d.feeByClient, OpMgmt:d.opMgmt, Agent:d.agent,
+    GrossComm:d.gross, Tip:d.tip, TipReimb:d.tipReimb, Net:d.net,
+    AgentPay:d.agentPay, CheckNum:d.check, Dose:d.dose, Notes:d.notes,
+    TenantPhone:d.tenantPhone, TenantEmail:d.tenantEmail
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dealRows.length ? dealRows : [{}]), 'Deals');
+
+  // Expenses
+  const expRows = Object.entries(db.expenses).map(([k,v]) => ({Key:k, Value:v}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expRows.length ? expRows : [{}]), 'Expenses');
+
+  // Agents
+  const agentRows = db.agents.map(a => ({ID:a.id,Name:a.name,Address:a.address,Started:a.started,SS:a.ss}));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(agentRows.length ? agentRows : [{}]), 'Agents');
+
+  // Payments
+  const payRows = db.agents.flatMap(a => (a.payments||[]).map(p => ({AgentID:a.id,PayID:p.id,Date:p.date,Check:p.check,Amount:p.amount})));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payRows.length ? payRows : [{}]), 'Payments');
+
+  // Config
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{
+    DealYears: db.dealYears.join(','),
+    ExpenseYears: db.expenseYears.join(','),
+    AccYears: db.accYears.join(',')
+  }]), 'Config');
+
+  XLSX.writeFile(wb, `Alpha-Backup-${todayStr()}.xlsx`);
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!confirm('Restore from this file? This will replace ALL current data.')) { event.target.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, {type:'binary'});
+      const sheet = n => { const ws=wb.Sheets[n]; return ws ? XLSX.utils.sheet_to_json(ws).filter(r=>Object.keys(r).length>1) : []; };
+
+      const deals = sheet('Deals').map(r => ({
+        id:String(r.ID||''), status:r.Status||'in-process', num:String(r.DealNum||''),
+        date:r.Date||'', client:r.Client||'', address:r.Address||'', apt:String(r.Apt||''),
+        mgmt:r.MGMT||'', bldg:String(r.BLDGCode||''), movein:r.MoveIn||'',
+        rent:r.Rent||'', fee:r.Fee||'', feePaidOn:r.FeePaidOn||'',
+        feeByClient:r.FeeByClient||'', opMgmt:r.OpMgmt||'', agent:r.Agent||'',
+        gross:r.GrossComm||'', tip:r.Tip||'', tipReimb:r.TipReimb||'',
+        net:r.Net||'', agentPay:r.AgentPay||'', check:String(r.CheckNum||''),
+        dose:r.Dose||'', notes:r.Notes||'',
+        tenantPhone:String(r.TenantPhone||''), tenantEmail:r.TenantEmail||''
+      })).filter(d => d.id);
+
+      const expenses = {};
+      sheet('Expenses').forEach(r => { if(r.Key) expenses[r.Key] = Number(r.Value)||0; });
+
+      const agentMap = {};
+      sheet('Agents').forEach(r => {
+        if (!r.ID) return;
+        agentMap[String(r.ID)] = { id:String(r.ID), name:r.Name||'', address:r.Address||'', started:r.Started||'', ss:String(r.SS||''), payments:[] };
+      });
+      sheet('Payments').forEach(r => {
+        const ag = agentMap[String(r.AgentID||'')];
+        if (ag) ag.payments.push({id:String(r.PayID||'pay-'+Date.now()),date:r.Date||'',check:String(r.Check||''),amount:Number(r.Amount)||0});
+      });
+
+      const cfg = sheet('Config')[0] || {};
+      const parseYears = s => s ? String(s).split(',').map(Number).filter(Boolean) : [2026];
+
+      db = {
+        deals,
+        expenses,
+        agents: Object.values(agentMap),
+        dealYears: parseYears(cfg.DealYears),
+        expenseYears: parseYears(cfg.ExpenseYears),
+        accYears: parseYears(cfg.AccYears),
+      };
+      saveDB();
+      activeDealYear = db.dealYears[0];
+      activeExpYear = db.expenseYears[0];
+      activeAccYear = db.accYears[0];
+      renderDeals();
+      renderExpenses();
+      renderAccounting();
+      alert(`✅ Restored! ${deals.length} deals, ${Object.values(agentMap).length} agents.`);
+    } catch(err) { alert('Failed to import: ' + err.message); }
+    event.target.value = '';
+  };
+  reader.readAsBinaryString(file);
+}
+
+// ══════════ UTILS ══════════
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function fmtDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'});
+}
+function fmtMoney(n) {
+  if (!n && n !== 0) return '—';
+  return '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+// ══════════ INIT ══════════
+document.getElementById('d-date').value = todayStr();
+
+
+renderDeals();
+</script>
+</body>
+</html>
