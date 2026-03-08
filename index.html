@@ -456,6 +456,10 @@ tr:hover td { background: var(--surface2); }
 </div>
 
 <script>
+// ══════════ SUPABASE CONFIG ══════════
+const SUPA_URL = "https://ekacheyphfsrzewdkgyh.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrYWNoZXlwaGZzcnpld2RrZ3loIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NzA0MjEsImV4cCI6MjA4ODQ0NjQyMX0.p9KXE3XYnzs3YKIOvXzdFsbUBJOpEEK2EI3-a2IdjU0";
+
 // ══════════ DATA ══════════
 let db = JSON.parse(localStorage.getItem('alpha-db') || 'null');
 if (!db) {
@@ -463,19 +467,71 @@ if (!db) {
     deals: [],
     dealYears: [2026],
     expenseYears: [2026],
-    expenses: {},   // key: "year_row_month" → value
+    expenses: {},
     agents: [],
     accYears: [2026],
   };
-  saveDB();
 }
-// Ensure arrays exist (backwards compat)
 if (!db.dealYears) db.dealYears = [2026];
 if (!db.expenseYears) db.expenseYears = [2026];
 if (!db.accYears) db.accYears = [2026];
 if (!db.expenses) db.expenses = {};
 
-function saveDB() { localStorage.setItem('alpha-db', JSON.stringify(db)); }
+// ══════════ SYNC ══════════
+function showSync(icon, msg) {
+  let el = document.getElementById('_sync_toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '_sync_toast';
+    el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1e1e24;border:1px solid #32323c;border-radius:50px;padding:8px 18px;font-size:.8rem;font-weight:600;color:#edeae2;z-index:9999;display:flex;align-items:center;gap:7px;box-shadow:0 4px 20px rgba(0,0,0,.4);transition:opacity .3s;';
+    document.body.appendChild(el);
+  }
+  el.style.opacity = '1';
+  el.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+}
+
+let _saveTimer = null;
+function saveDB() {
+  localStorage.setItem('alpha-db', JSON.stringify(db));
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(cloudSave, 700);
+}
+
+async function cloudSave() {
+  showSync('⏳', 'Saving…');
+  try {
+    await fetch(`${SUPA_URL}/rest/v1/alpha_data?id=eq.main`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`,
+        'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ data: db, updated_at: new Date().toISOString() })
+    });
+    showSync('✅', 'Saved!');
+  } catch(e) { showSync('⚠️', 'Offline – saved locally'); }
+}
+
+async function cloudLoad() {
+  showSync('⏳', 'Loading…');
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/alpha_data?id=eq.main&select=data`, {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }
+    });
+    const rows = await res.json();
+    if (rows && rows[0] && rows[0].data) {
+      db = rows[0].data;
+      if (!db.dealYears) db.dealYears = [2026];
+      if (!db.expenseYears) db.expenseYears = [2026];
+      if (!db.accYears) db.accYears = [2026];
+      if (!db.expenses) db.expenses = {};
+      localStorage.setItem('alpha-db', JSON.stringify(db));
+      showSync('✅', 'Loaded!');
+    }
+  } catch(e) { showSync('⚠️', 'Using local data'); }
+}
 
 // ══════════ STATE ══════════
 let activeDealYear = db.dealYears[0] || 2026;
@@ -1125,9 +1181,12 @@ function fmtMoney(n) {
 
 // ══════════ INIT ══════════
 document.getElementById('d-date').value = todayStr();
-
-
-renderDeals();
+cloudLoad().then(() => {
+  activeDealYear = db.dealYears[db.dealYears.length - 1] || 2026;
+  activeExpYear = db.expenseYears[db.expenseYears.length - 1] || 2026;
+  activeAccYear = db.accYears[db.accYears.length - 1] || 2026;
+  renderDeals();
+});
 </script>
 </body>
 </html>
