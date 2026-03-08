@@ -523,14 +523,17 @@ async function cloudLoad() {
     const rows = await res.json();
     if (rows && rows[0] && rows[0].data) {
       db = rows[0].data;
-      if (!db.dealYears) db.dealYears = [2026];
-      if (!db.expenseYears) db.expenseYears = [2026];
-      if (!db.accYears) db.accYears = [2026];
-      if (!db.expenses) db.expenses = {};
       localStorage.setItem('alpha-db', JSON.stringify(db));
       showSync('✅', 'Loaded!');
     }
   } catch(e) { showSync('⚠️', 'Using local data'); }
+  // Always ensure all fields exist regardless of source
+  if (!db.deals) db.deals = [];
+  if (!db.dealYears) db.dealYears = [2026];
+  if (!db.expenseYears) db.expenseYears = [2026];
+  if (!db.accYears) db.accYears = [2026];
+  if (!db.expenses) db.expenses = {};
+  if (!db.agents) db.agents = [];
 }
 
 // ══════════ STATE ══════════
