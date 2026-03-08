@@ -522,12 +522,23 @@ async function cloudLoad() {
     });
     const rows = await res.json();
     if (rows && rows[0] && rows[0].data) {
-      db = rows[0].data;
-      localStorage.setItem('alpha-db', JSON.stringify(db));
-      showSync('✅', 'Loaded!');
+      const cloud = rows[0].data;
+      // Only use cloud data if it has actual content
+      const hasData = (cloud.deals && cloud.deals.length > 0) ||
+                      (cloud.agents && cloud.agents.length > 0) ||
+                      (cloud.expenses && Object.keys(cloud.expenses).length > 0);
+      if (hasData) {
+        db = cloud;
+        localStorage.setItem('alpha-db', JSON.stringify(db));
+        showSync('✅', 'Loaded!');
+      } else {
+        // Cloud is empty — push local data up to Supabase
+        showSync('⏳', 'Syncing local data to cloud…');
+        await cloudSave();
+      }
     }
   } catch(e) { showSync('⚠️', 'Using local data'); }
-  // Always ensure all fields exist regardless of source
+  // Always ensure all fields exist
   if (!db.deals) db.deals = [];
   if (!db.dealYears) db.dealYears = [2026];
   if (!db.expenseYears) db.expenseYears = [2026];
