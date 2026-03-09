@@ -8,20 +8,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root {
-  --bg: #0c0c0e;
-  --surface: #141418;
-  --surface2: #1e1e24;
-  --surface3: #28282f;
-  --border: #32323c;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface2: #f4f3f0;
+  --surface3: #ebebeb;
+  --border: #e0ddd6;
   --gold: #c9a84c;
-  --gold2: #e8c97a;
-  --text: #edeae2;
-  --muted: #7c7a82;
-  --green: #3dba7a;
-  --blue: #4a9eff;
-  --yellow: #f5c842;
-  --grey: #9a9a9a;
-  --red: #e05c5c;
+  --gold2: #b8954a;
+  --text: #1a1916;
+  --muted: #7a7670;
+  --green: #16a34a;
+  --blue: #2563eb;
+  --yellow: #d97706;
+  --grey: #6b7280;
+  --red: #dc2626;
   --radius: 12px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -118,7 +118,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Source Sans 3', 
 
 /* ── FORMS / MODALS ── */
 .modal-bg {
-  position: fixed; inset: 0; background: rgba(0,0,0,.75); backdrop-filter: blur(4px);
+  position: fixed; inset: 0; background: rgba(0,0,0,.4); backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center; z-index: 1000;
   opacity: 0; pointer-events: none; transition: opacity .2s;
 }
@@ -151,11 +151,11 @@ textarea { resize: vertical; min-height: 60px; }
 .form-section { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--gold); margin: 16px 0 8px; grid-column: span 2; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
 
 /* ── STATUS COLORS ── */
-.status-in-process   { background: rgba(255,255,255,.08); color: #ddd; border: 1px solid rgba(255,255,255,.15); }
-.status-op-pending   { background: rgba(245,200,66,.15); color: var(--yellow); border: 1px solid rgba(245,200,66,.3); }
-.status-deal-close   { background: rgba(74,158,255,.12); color: var(--blue); border: 1px solid rgba(74,158,255,.25); }
-.status-dead-deal    { background: rgba(154,154,154,.1); color: var(--grey); border: 1px solid rgba(154,154,154,.2); }
-.status-done-pay     { background: rgba(61,186,122,.12); color: var(--green); border: 1px solid rgba(61,186,122,.25); }
+.status-in-process   { background: rgba(0,0,0,.06); color: #555; border: 1px solid rgba(0,0,0,.12); }
+.status-op-pending   { background: rgba(217,119,6,.12); color: var(--yellow); border: 1px solid rgba(217,119,6,.3); }
+.status-deal-close   { background: rgba(37,99,235,.1); color: var(--blue); border: 1px solid rgba(37,99,235,.25); }
+.status-dead-deal    { background: rgba(107,114,128,.1); color: var(--grey); border: 1px solid rgba(107,114,128,.2); }
+.status-done-pay     { background: rgba(22,163,74,.1); color: var(--green); border: 1px solid rgba(22,163,74,.25); }
 .status-pill {
   display: inline-block; padding: 3px 10px; border-radius: 20px;
   font-size: .7rem; font-weight: 700; white-space: nowrap;
@@ -175,7 +175,7 @@ th {
   text-align: left; font-size: .65rem; color: var(--muted);
   text-transform: uppercase; letter-spacing: .08em;
   padding: 8px 10px; border-bottom: 1px solid var(--border);
-  white-space: nowrap; background: var(--surface2); font-weight: 600;
+  white-space: nowrap; background: var(--surface2); font-weight: 600; color: var(--text);
 }
 td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
@@ -502,13 +502,15 @@ function saveDB() {
 async function cloudSave() {
   showSync('⏳', 'Saving…');
   try {
-    await fetch(`${SUPA_URL}/rest/v1/alpha_data?id=eq.main`, {
-      method: 'PATCH',
+    // Use upsert so deletions always overwrite cloud — PATCH can silently fail if row is missing
+    await fetch(`${SUPA_URL}/rest/v1/alpha_data`, {
+      method: 'POST',
       headers: {
         'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`,
-        'Content-Type': 'application/json', 'Prefer': 'return=minimal'
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
-      body: JSON.stringify({ data: db, updated_at: new Date().toISOString() })
+      body: JSON.stringify({ id: 'main', data: db, updated_at: new Date().toISOString() })
     });
     showSync('✅', 'Saved!');
   } catch(e) { showSync('⚠️', 'Offline – saved locally'); }
@@ -523,19 +525,14 @@ async function cloudLoad() {
     const rows = await res.json();
     if (rows && rows[0] && rows[0].data) {
       const cloud = rows[0].data;
-      // Only use cloud data if it has actual content
-      const hasData = (cloud.deals && cloud.deals.length > 0) ||
-                      (cloud.agents && cloud.agents.length > 0) ||
-                      (cloud.expenses && Object.keys(cloud.expenses).length > 0);
-      if (hasData) {
-        db = cloud;
-        localStorage.setItem('alpha-db', JSON.stringify(db));
-        showSync('✅', 'Loaded!');
-      } else {
-        // Cloud is empty — push local data up to Supabase
-        showSync('⏳', 'Syncing local data to cloud…');
-        await cloudSave();
-      }
+      // Always trust cloud data — it is the source of truth (including deletions)
+      db = cloud;
+      localStorage.setItem('alpha-db', JSON.stringify(db));
+      showSync('✅', 'Loaded!');
+    } else {
+      // Nothing in cloud yet — push local data up
+      showSync('⏳', 'Syncing local data to cloud…');
+      await cloudSave();
     }
   } catch(e) { showSync('⚠️', 'Using local data'); }
   // Always ensure all fields exist
