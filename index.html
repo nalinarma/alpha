@@ -754,6 +754,7 @@ tr:hover td { background: var(--surface2); }
       <div class="form-group"><label>Date</label><input id="pay-date" type="date"></div>
       <div class="form-group"><label>Check #</label><input id="pay-check" placeholder="Check number"></div>
       <div class="form-group full"><label>Amount ($)</label><input id="pay-amount" type="number" placeholder="0.00"></div>
+      <div class="form-group full"><label>Notes</label><textarea id="pay-notes" placeholder="Optional notes…" style="resize:vertical;min-height:64px;"></textarea></div>
     </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-payment')">Cancel</button>
@@ -1392,12 +1393,14 @@ function renderAccounting() {
       <td>${fmtDate(p.date)}</td>
       <td>${p.check || '—'}</td>
       <td style="color:var(--green);font-weight:600;">${fmtMoney(parseFloat(p.amount)||0)}</td>
+      <td style="color:var(--muted);font-size:.82rem;font-style:italic;">${p.notes ? escHtml(p.notes) : ''}</td>
       <td><button class="btn btn-danger btn-sm" onclick="deletePayment('${agent.id}','${p.id}')">✕</button></td>
     </tr>`).join('');
 
     const totalRow = payments.length > 0 ? `<tr class="pay-total-row">
       <td colspan="2" style="font-weight:700;color:var(--gold);">Total ${activeAccYear}</td>
       <td style="color:var(--green);font-weight:700;">${fmtMoney(total)}</td>
+      <td></td>
       <td></td>
     </tr>` : '';
 
@@ -1423,9 +1426,9 @@ function renderAccounting() {
       </div>
       <div class="agent-pay-table">
         <table>
-          <thead><tr><th>Date</th><th>Check #</th><th>Amount</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Check #</th><th>Amount</th><th>Notes</th><th></th></tr></thead>
           <tbody>
-            ${payRows || `<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px;">No payments for ${activeAccYear}</td></tr>`}
+            ${payRows || `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:16px;">No payments for ${activeAccYear}</td></tr>`}
             ${totalRow}
           </tbody>
         </table>
@@ -1461,6 +1464,7 @@ function openAddPayment(agentId) {
   document.getElementById('pay-date').value = todayStr();
   document.getElementById('pay-check').value = '';
   document.getElementById('pay-amount').value = '';
+  document.getElementById('pay-notes').value = '';
   openModal('modal-add-payment');
 }
 
@@ -1475,7 +1479,8 @@ function savePayment() {
     id: 'pay-' + Date.now(),
     date: document.getElementById('pay-date').value,
     check: document.getElementById('pay-check').value.trim(),
-    amount
+    amount,
+    notes: document.getElementById('pay-notes').value.trim()
   });
   saveDB();
   closeModal('modal-add-payment');
@@ -1679,7 +1684,7 @@ function exportToExcel() {
 
   // ── Agent Payments Detail ──
   accRows.push(['AGENT PAYMENTS DETAIL']);
-  accRows.push(['Agent Name', 'SS #', 'Address', 'Started', 'Year', 'Payment Date', 'Check #', 'Amount ($)']);
+  accRows.push(['Agent Name', 'SS #', 'Address', 'Started', 'Year', 'Payment Date', 'Check #', 'Amount ($)', 'Notes']);
 
   db.agents.forEach(agent => {
     const payments = [...(agent.payments || [])].sort((a,b) => (a.date||'').localeCompare(b.date||''));
@@ -1696,7 +1701,8 @@ function exportToExcel() {
           yr,
           p.date || '',
           p.check || '',
-          parseFloat(p.amount) || 0
+          parseFloat(p.amount) || 0,
+          p.notes || ''
         ]);
       });
       // Agent subtotal row
@@ -1772,7 +1778,7 @@ function exportData() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(agentRows.length ? agentRows : [{}]), 'Agents');
 
   // Payments
-  const payRows = db.agents.flatMap(a => (a.payments||[]).map(p => ({AgentID:a.id,PayID:p.id,Date:p.date,Check:p.check,Amount:p.amount})));
+  const payRows = db.agents.flatMap(a => (a.payments||[]).map(p => ({AgentID:a.id,PayID:p.id,Date:p.date,Check:p.check,Amount:p.amount,Notes:p.notes||''})));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payRows.length ? payRows : [{}]), 'Payments');
 
   // Config
@@ -1818,7 +1824,7 @@ function importData(event) {
       });
       sheet('Payments').forEach(r => {
         const ag = agentMap[String(r.AgentID||'')];
-        if (ag) ag.payments.push({id:String(r.PayID||'pay-'+Date.now()),date:r.Date||'',check:String(r.Check||''),amount:Number(r.Amount)||0});
+        if (ag) ag.payments.push({id:String(r.PayID||'pay-'+Date.now()),date:r.Date||'',check:String(r.Check||''),amount:Number(r.Amount)||0,notes:r.Notes||''});
       });
 
       const cfg = sheet('Config')[0] || {};
@@ -1848,6 +1854,7 @@ function importData(event) {
 
 // ══════════ UTILS ══════════
 function todayStr() { return new Date().toISOString().split('T')[0]; }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function fmtDate(d) {
   if (!d) return '—';
   const dt = new Date(d + 'T00:00:00');
