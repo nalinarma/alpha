@@ -255,6 +255,30 @@ tr:hover td { background: var(--surface2); }
   background: var(--surface2);
   font-size: .9rem;
 }
+/* Expense notes rows */
+.exp-note-row { background: rgba(201,168,76,.03); }
+.exp-note-label {
+  padding: 3px 14px 5px 22px;
+  font-size: .68rem; color: var(--muted);
+  font-style: italic;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  background: rgba(201,168,76,.04);
+  white-space: nowrap;
+}
+.exp-note-cell {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 0; min-width: 78px;
+}
+.exp-note-cell input {
+  width: 100%; padding: 3px 8px 4px;
+  background: transparent; border: none;
+  color: var(--muted); font-size: .72rem;
+  font-style: italic; text-align: left;
+  font-family: 'Source Sans 3', sans-serif; outline: none;
+}
+.exp-note-cell input:focus { background: rgba(201,168,76,.07); color: var(--text); }
 
 /* ── ACCOUNTING ── */
 .agent-card { padding: 20px 24px; margin-bottom: 16px; }
@@ -337,7 +361,10 @@ tr:hover td { background: var(--surface2); }
     <div id="tab-accounting" class="tab-panel" style="background:#eff6ff;min-height:100%;padding:16px;border-radius:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <div class="year-bar" id="acc-year-bar" style="margin-bottom:0;"></div>
-        <button class="btn btn-gold" onclick="openModal('modal-add-agent')">+ Add Agent</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" onclick="openAgentList()">👥 Agent List</button>
+          <button class="btn btn-gold" onclick="openModal('modal-add-agent')">+ Add Agent</button>
+        </div>
       </div>
       <div id="accounting-content"></div>
     </div>
@@ -391,8 +418,10 @@ tr:hover td { background: var(--surface2); }
       <div class="form-group"><label>TIP ($)</label><input id="d-tip" type="number" placeholder="0.00"></div>
       <div class="form-group"><label>TIP Reimbursed ($)</label><input id="d-tip-reimb" type="number" placeholder="0.00"></div>
       <div class="form-group"><label>NET ($)</label><input id="d-net" type="number" placeholder="0.00"></div>
-      <div class="form-group"><label>Agent Pay ($)</label><input id="d-agent-pay" type="number" placeholder="0.00"></div>
-      <div class="form-group"><label>Check #</label><input id="d-check" placeholder="Check number"></div>
+      <div class="form-group"><label>Agent 1 Pay ($)</label><input id="d-agent-pay" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Check # (1)</label><input id="d-check" placeholder="Check number"></div>
+      <div class="form-group"><label>Agent 2 Pay ($)</label><input id="d-agent2-pay" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Check # (2)</label><input id="d-check2" placeholder="Check number"></div>
       <div class="form-group"><label>DOSE</label><input id="d-dose" placeholder="DOSE"></div>
 
       <div class="form-section">Tenant Info</div>
@@ -451,6 +480,47 @@ tr:hover td { background: var(--surface2); }
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-payment')">Cancel</button>
       <button class="btn btn-gold" onclick="savePayment()">Add Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT AGENT -->
+<div class="modal-bg" id="modal-edit-agent">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-title">Edit Agent</div>
+    <input type="hidden" id="edit-ag-id">
+    <div class="form-grid">
+      <div class="form-group full"><label>Full Name</label><input id="edit-ag-name" placeholder="First Last"></div>
+      <div class="form-group full"><label>Address</label><input id="edit-ag-address" placeholder="Street address"></div>
+      <div class="form-group"><label>Started</label><input id="edit-ag-started" type="date"></div>
+      <div class="form-group"><label>SS #</label><input id="edit-ag-ss" placeholder="XXX-XX-XXXX"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-agent')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveEditAgent()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- AGENT LIST -->
+<div class="modal-bg" id="modal-agent-list">
+  <div class="modal" style="max-width:720px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div class="modal-title" style="margin-bottom:0;">👥 Agent List</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-agent-list')">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);background:var(--surface2);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);">Name</th>
+            <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);background:var(--surface2);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);">Address</th>
+            <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);background:var(--surface2);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);">SS #</th>
+            <th style="text-align:left;padding:8px 12px;border-bottom:2px solid var(--border);background:var(--surface2);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);">Started</th>
+          </tr>
+        </thead>
+        <tbody id="agent-list-tbody"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -684,6 +754,7 @@ function clearDealForm() {
   ['d-id','d-num','d-date','d-client','d-address','d-apt','d-mgmt','d-bldg',
    'd-movein','d-rent','d-fee','d-fee-paid-on','d-fee-by-client','d-op-mgmt',
    'd-agent','d-gross','d-tip','d-tip-reimb','d-net','d-agent-pay','d-check',
+   'd-agent2-pay','d-check2',
    'd-dose','d-notes','d-tenant-phone','d-tenant-email'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -723,6 +794,8 @@ function saveDeal() {
     net: document.getElementById('d-net').value,
     agentPay: document.getElementById('d-agent-pay').value,
     check: document.getElementById('d-check').value.trim(),
+    agent2Pay: document.getElementById('d-agent2-pay').value,
+    check2: document.getElementById('d-check2').value.trim(),
     dose: document.getElementById('d-dose').value.trim(),
     notes: document.getElementById('d-notes').value.trim(),
     tenantPhone: document.getElementById('d-tenant-phone').value.trim(),
@@ -777,8 +850,10 @@ function viewDeal(id) {
       ${field('TIP', money(d.tip))}
       ${field('TIP Reimbursed', money(d.tipReimb))}
       ${field('NET', money(d.net))}
-      ${field('Agent Pay', money(d.agentPay))}
-      ${field('Check #', d.check)}
+      ${field('Agent Pay (1)', money(d.agentPay))}
+      ${field('Check # (1)', d.check)}
+      ${field('Agent Pay (2)', money(d.agent2Pay))}
+      ${field('Check # (2)', d.check2)}
       ${field('DOSE', d.dose)}
       ${field('Tenant Phone', d.tenantPhone)}
       ${field('Tenant Email', d.tenantEmail)}
@@ -819,6 +894,8 @@ function editCurrentDeal() {
   document.getElementById('d-net').value = d.net || '';
   document.getElementById('d-agent-pay').value = d.agentPay || '';
   document.getElementById('d-check').value = d.check || '';
+  document.getElementById('d-agent2-pay').value = d.agent2Pay || '';
+  document.getElementById('d-check2').value = d.check2 || '';
   document.getElementById('d-dose').value = d.dose || '';
   document.getElementById('d-notes').value = d.notes || '';
   document.getElementById('d-tenant-phone').value = d.tenantPhone || '';
@@ -857,6 +934,16 @@ function addExpYear() {
 
 function getExpKey(year, rowIdx, monthIdx) {
   return `exp_${year}_${rowIdx}_${monthIdx}`;
+}
+function getExpNoteKey(year, rowIdx, monthIdx) {
+  return `expnote_${year}_${rowIdx}_${monthIdx}`;
+}
+
+function saveExpNote(year, rowIdx, monthIdx, value) {
+  const key = getExpNoteKey(year, rowIdx, monthIdx);
+  if (value && value.trim()) db.expenses[key] = value.trim();
+  else delete db.expenses[key];
+  saveDB();
 }
 
 function saveExpCell(year, rowIdx, monthIdx, value) {
@@ -905,7 +992,7 @@ function renderExpenses() {
     </tr></thead>
     <tbody>`;
 
-  // One row per expense category
+  // One row per expense category + notes row
   EXP_ROWS.forEach((row, ri) => {
     let rowTotal = 0;
     for (let m = 0; m < 12; m++) rowTotal += db.expenses[getExpKey(y, ri, m)] || 0;
@@ -925,6 +1012,20 @@ function renderExpenses() {
 
     html += `<td class="exp-row-total" id="exp-rowtotal-${y}-${ri}">${rowTotal > 0 ? fmtMoney(rowTotal) : '—'}</td>
     </tr>`;
+
+    // Notes row below each category
+    html += `<tr class="exp-note-row">
+      <td class="exp-note-label">↳ notes</td>`;
+    for (let mi = 0; mi < 12; mi++) {
+      const noteKey = getExpNoteKey(y, ri, mi);
+      const noteVal = (db.expenses[noteKey] || '').replace(/"/g, '&quot;');
+      html += `<td class="exp-note-cell" colspan="1">
+        <input type="text" value="${noteVal}" placeholder="…"
+          onchange="saveExpNote(${y},${ri},${mi},this.value)"
+          id="exp-note-${y}-${ri}-${mi}">
+      </td>`;
+    }
+    html += `<td class="exp-note-cell"></td></tr>`;
   });
 
   // Footer: monthly column totals
@@ -1004,10 +1105,19 @@ function renderAccounting() {
     return `<div class="card agent-card" style="margin-bottom:16px;">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div>
-          <div class="agent-name">${agent.name}</div>
-          <div class="agent-meta">${agent.address ? agent.address + ' · ' : ''}${agent.started ? 'Started: ' + fmtDate(agent.started) + ' · ' : ''}${agent.ss ? 'SS: ' + agent.ss : ''}</div>
+          <div class="agent-name" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;" onclick="toggleAgentDetails('${agent.id}')">
+            ${agent.name}
+            <span style="font-size:.7rem;color:var(--muted);font-family:'Source Sans 3',sans-serif;font-weight:400;" id="agent-toggle-hint-${agent.id}">▶ show details</span>
+          </div>
+          <div class="agent-meta" id="agent-details-${agent.id}" style="display:none;margin-top:6px;">
+            ${agent.address ? `<span>📍 ${agent.address}</span>` : ''}
+            ${agent.address && agent.ss ? ' · ' : ''}
+            ${agent.ss ? `<span>SS#: ${agent.ss}</span>` : ''}
+            ${agent.started ? ` · Started: ${fmtDate(agent.started)}` : ''}
+          </div>
         </div>
         <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="openEditAgent('${agent.id}')">✏️ Edit</button>
           <button class="btn btn-gold btn-sm" onclick="openAddPayment('${agent.id}')">+ Payment</button>
           <button class="btn btn-danger btn-sm" onclick="deleteAgent('${agent.id}')">🗑</button>
         </div>
@@ -1080,6 +1190,58 @@ function deletePayment(agentId, payId) {
   saveDB(); renderAccounting();
 }
 
+function toggleAgentDetails(agentId) {
+  const details = document.getElementById('agent-details-' + agentId);
+  const hint = document.getElementById('agent-toggle-hint-' + agentId);
+  if (!details) return;
+  if (details.style.display === 'none') {
+    details.style.display = 'block';
+    hint.textContent = '▼ hide details';
+  } else {
+    details.style.display = 'none';
+    hint.textContent = '▶ show details';
+  }
+}
+
+function openEditAgent(agentId) {
+  const agent = db.agents.find(a => a.id === agentId);
+  if (!agent) return;
+  document.getElementById('edit-ag-id').value = agent.id;
+  document.getElementById('edit-ag-name').value = agent.name || '';
+  document.getElementById('edit-ag-address').value = agent.address || '';
+  document.getElementById('edit-ag-started').value = agent.started || '';
+  document.getElementById('edit-ag-ss').value = agent.ss || '';
+  openModal('modal-edit-agent');
+}
+
+function saveEditAgent() {
+  const id = document.getElementById('edit-ag-id').value;
+  const agent = db.agents.find(a => a.id === id);
+  if (!agent) return;
+  const name = document.getElementById('edit-ag-name').value.trim();
+  if (!name) { alert('Please enter agent name.'); return; }
+  agent.name = name;
+  agent.address = document.getElementById('edit-ag-address').value.trim();
+  agent.started = document.getElementById('edit-ag-started').value;
+  agent.ss = document.getElementById('edit-ag-ss').value.trim();
+  saveDB();
+  closeModal('modal-edit-agent');
+  renderAccounting();
+}
+
+function openAgentList() {
+  const tbody = document.getElementById('agent-list-tbody');
+  tbody.innerHTML = db.agents.length === 0
+    ? `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">No agents added yet.</td></tr>`
+    : db.agents.map(a => `<tr>
+        <td style="font-weight:600;color:var(--gold);">${a.name}</td>
+        <td>${a.address || '—'}</td>
+        <td>${a.ss || '—'}</td>
+        <td>${a.started ? fmtDate(a.started) : '—'}</td>
+      </tr>`).join('');
+  openModal('modal-agent-list');
+}
+
 // ══════════ BACKUP / RESTORE ══════════
 function exportData() {
   const wb = XLSX.utils.book_new();
@@ -1091,7 +1253,8 @@ function exportData() {
     MoveIn:d.movein, Rent:d.rent, Fee:d.fee, FeePaidOn:d.feePaidOn,
     FeeByClient:d.feeByClient, OpMgmt:d.opMgmt, Agent:d.agent,
     GrossComm:d.gross, Tip:d.tip, TipReimb:d.tipReimb, Net:d.net,
-    AgentPay:d.agentPay, CheckNum:d.check, Dose:d.dose, Notes:d.notes,
+    AgentPay:d.agentPay, CheckNum:d.check, Agent2Pay:d.agent2Pay, Check2:d.check2,
+    Dose:d.dose, Notes:d.notes,
     TenantPhone:d.tenantPhone, TenantEmail:d.tenantEmail
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dealRows.length ? dealRows : [{}]), 'Deals');
@@ -1136,6 +1299,7 @@ function importData(event) {
         feeByClient:r.FeeByClient||'', opMgmt:r.OpMgmt||'', agent:r.Agent||'',
         gross:r.GrossComm||'', tip:r.Tip||'', tipReimb:r.TipReimb||'',
         net:r.Net||'', agentPay:r.AgentPay||'', check:String(r.CheckNum||''),
+        agent2Pay:r.Agent2Pay||'', check2:String(r.Check2||''),
         dose:r.Dose||'', notes:r.Notes||'',
         tenantPhone:String(r.TenantPhone||''), tenantEmail:r.TenantEmail||''
       })).filter(d => d.id);
