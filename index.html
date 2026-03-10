@@ -452,6 +452,7 @@ th {
   text-transform: uppercase; letter-spacing: .08em;
   padding: 8px 10px; border-bottom: 1px solid var(--border);
   white-space: nowrap; background: var(--surface2); font-weight: 600; color: var(--text);
+  position: sticky; top: 0; z-index: 2;
 }
 td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
@@ -689,13 +690,13 @@ tr:hover td { background: var(--surface2); }
       <div class="form-group"><label>Rent ($)</label><input id="d-rent" type="number" placeholder="0.00"></div>
       <div class="form-group"><label>FEE ($)</label><input id="d-fee" type="number" placeholder="0.00"></div>
       <div class="form-group"><label>Fee Paid On</label><input id="d-fee-paid-on" type="date"></div>
-      <div class="form-group"><label>Fee Paid By Client ($)</label><input id="d-fee-by-client" type="number" placeholder="0.00"></div>
-      <div class="form-group"><label>Op Paid By MGMT ($)</label><input id="d-op-mgmt" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Fee Paid By Client ($)</label><input id="d-fee-by-client" type="number" placeholder="0.00" oninput="calcDealFormulas()"></div>
+      <div class="form-group"><label>Op Paid By MGMT ($)</label><input id="d-op-mgmt" type="number" placeholder="0.00" oninput="calcDealFormulas()"></div>
       <div class="form-group"><label>Agent</label><input id="d-agent" placeholder="Agent name"></div>
-      <div class="form-group"><label>Gross COMM ($)</label><input id="d-gross" type="number" placeholder="0.00"></div>
-      <div class="form-group"><label>TIP ($)</label><input id="d-tip" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>Gross COMM ($) <span style="font-size:.7rem;color:var(--gold);font-weight:600;">= Fee by Client + Op by MGMT</span></label><input id="d-gross" type="number" placeholder="0.00" readonly style="background:rgba(201,168,76,.08);color:var(--gold);font-weight:700;cursor:default;"></div>
+      <div class="form-group"><label>TIP ($)</label><input id="d-tip" type="number" placeholder="0.00" oninput="calcDealFormulas()"></div>
       <div class="form-group"><label>TIP Reimbursed ($)</label><input id="d-tip-reimb" type="number" placeholder="0.00"></div>
-      <div class="form-group"><label>NET ($)</label><input id="d-net" type="number" placeholder="0.00"></div>
+      <div class="form-group"><label>NET ($) <span style="font-size:.7rem;color:var(--gold);font-weight:600;">= Gross COMM + Tip</span></label><input id="d-net" type="number" placeholder="0.00" readonly style="background:rgba(201,168,76,.08);color:var(--gold);font-weight:700;cursor:default;"></div>
       <div class="form-group"><label>Agent 1 Pay ($)</label><input id="d-agent-pay" type="number" placeholder="0.00"></div>
       <div class="form-group"><label>Check # (1)</label><input id="d-check" placeholder="Check number"></div>
       <div class="form-group"><label>Agent 2 Pay ($)</label><input id="d-agent2-pay" type="number" placeholder="0.00"></div>
@@ -705,7 +706,7 @@ tr:hover td { background: var(--surface2); }
       <div class="form-section">Tenant Info</div>
       <div class="form-group"><label>Tenant Phone</label><input id="d-tenant-phone" type="tel" placeholder="(555) 000-0000"></div>
       <div class="form-group"><label>Tenant Email</label><input id="d-tenant-email" type="email" placeholder="tenant@email.com"></div>
-      <div class="form-group full"><label>Notes</label><textarea id="d-notes" placeholder="Any additional notes..."></textarea></div>
+      <div class="form-group full"><label>Notes</label><textarea id="d-notes" placeholder="Any additional notes..." style="min-height:120px;resize:vertical;font-size:.95rem;line-height:1.6;white-space:pre;overflow-x:auto;"></textarea></div>
     </div>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-deal')">Cancel</button>
@@ -1064,6 +1065,16 @@ function clearDealForm() {
   document.getElementById('deal-modal-title').textContent = 'New Deal';
 }
 
+function calcDealFormulas() {
+  const feeByClient = parseFloat(document.getElementById('d-fee-by-client').value) || 0;
+  const opMgmt = parseFloat(document.getElementById('d-op-mgmt').value) || 0;
+  const tip = parseFloat(document.getElementById('d-tip').value) || 0;
+  const gross = feeByClient + opMgmt;
+  const net = gross + tip;
+  document.getElementById('d-gross').value = gross > 0 ? gross.toFixed(2) : '';
+  document.getElementById('d-net').value = net > 0 ? net.toFixed(2) : '';
+}
+
 function openAddDeal() {
   clearDealForm();
   openModal('modal-add-deal');
@@ -1200,6 +1211,7 @@ function editCurrentDeal() {
   document.getElementById('d-notes').value = d.notes || '';
   document.getElementById('d-tenant-phone').value = d.tenantPhone || '';
   document.getElementById('d-tenant-email').value = d.tenantEmail || '';
+  calcDealFormulas();
   openModal('modal-add-deal');
 }
 
