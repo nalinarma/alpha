@@ -5,7 +5,281 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Alpha</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* ── Inline XLSX writer (self-contained, no CDN needed) ── */
+var XLSX = (function() {
+  'use strict';
+
+  // ── Tiny UTF-8 encoder ──
+  function utf8(str) {
+    var bytes = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 0x80) bytes.push(c);
+      else if (c < 0x800) { bytes.push(0xC0|(c>>6), 0x80|(c&63)); }
+      else if (c < 0x10000) { bytes.push(0xE0|(c>>12), 0x80|((c>>6)&63), 0x80|(c&63)); }
+      else { bytes.push(0xF0|(c>>18),0x80|((c>>12)&63),0x80|((c>>6)&63),0x80|(c&63)); }
+    }
+    return bytes;
+  }
+
+  // ── CRC32 ──
+  var crcTable = (function(){
+    var t=new Uint32Array(256);
+    for(var i=0;i<256;i++){var c=i;for(var j=0;j<8;j++)c=c&1?(0xEDB88320^(c>>>1)):(c>>>1);t[i]=c;}
+    return t;
+  })();
+  function crc32(buf){
+    var c=0xFFFFFFFF;
+    for(var i=0;i<buf.length;i++)c=crcTable[(c^buf[i])&0xFF]^(c>>>8);
+    return (c^0xFFFFFFFF)>>>0;
+  }
+
+  // ── Write little-endian numbers ──
+  function u16(n){return [n&0xFF,(n>>8)&0xFF];}
+  function u32(n){return [n&0xFF,(n>>8)&0xFF,(n>>16)&0xFF,(n>>24)&0xFF];}
+
+  // ── Build a ZIP file from an array of {name, data(Uint8Array)} ──
+  function buildZip(files) {
+    var centralDir = [];
+    var allBytes = [];
+    var offset = 0;
+
+    files.forEach(function(f) {
+      var nameBytes = utf8(f.name);
+      var data = f.data; // Uint8Array
+      var crc = crc32(data);
+      var localHeader = [].concat(
+        [0x50,0x4B,0x03,0x04], // local file header sig
+        u16(20),               // version needed
+        u16(0),                // flags
+        u16(0),                // compression: stored
+        u16(0), u16(0),        // mod time/date
+        u32(crc),
+        u32(data.length),
+        u32(data.length),
+        u16(nameBytes.length),
+        u16(0),                // extra field len
+        nameBytes
+      );
+      var localStart = offset;
+      allBytes = allBytes.concat(localHeader, Array.from(data));
+      offset += localHeader.length + data.length;
+
+      centralDir = centralDir.concat(
+        [0x50,0x4B,0x01,0x02], // central dir sig
+        u16(20), u16(20),      // version made / needed
+        u16(0), u16(0),        // flags, compression
+        u16(0), u16(0),        // mod time/date
+        u32(crc),
+        u32(data.length),
+        u32(data.length),
+        u16(nameBytes.length),
+        u16(0), u16(0),        // extra, comment len
+        u16(0), u16(0),        // disk start, int attrs
+        u32(0),                // ext attrs
+        u32(localStart),
+        nameBytes
+      );
+    });
+
+    var cdOffset = offset;
+    var cdSize = centralDir.length;
+    var eocd = [].concat(
+      [0x50,0x4B,0x05,0x06], // EOCD sig
+      u16(0), u16(0),        // disk numbers
+      u16(files.length), u16(files.length),
+      u32(cdSize), u32(cdOffset),
+      u16(0)                 // comment len
+    );
+    var all = new Uint8Array(allBytes.concat(centralDir, eocd));
+    return all;
+  }
+
+  // ── XML escape ──
+  function esc(v) {
+    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  }
+
+  // ── Column index to letter (0=A, 25=Z, 26=AA …) ──
+  function colName(n) {
+    var s=''; n++;
+    while(n>0){s=String.fromCharCode(64+(n%26||26))+s;n=Math.floor((n-(n%26||26))/26);}
+    return s;
+  }
+
+  // ── Convert array-of-arrays to a sheet object ──
+  function aoa_to_sheet(aoa) {
+    var ws = {'!ref':'', '!cols':null, '!freeze':null};
+    var maxC=0, maxR=aoa.length;
+    aoa.forEach(function(row,ri){
+      if(!Array.isArray(row)) return;
+      row.forEach(function(val,ci){
+        if(ci>maxC) maxC=ci;
+        var addr = colName(ci)+(ri+1);
+        if(val===null||val===undefined||val==='') return;
+        if(typeof val==='number') ws[addr]={t:'n',v:val};
+        else ws[addr]={t:'s',v:String(val)};
+      });
+    });
+    ws['!ref']='A1:'+colName(maxC)+(maxR||1);
+    return ws;
+  }
+
+  // ── Convert array-of-objects to sheet ──
+  function json_to_sheet(rows) {
+    if(!rows||!rows.length) return aoa_to_sheet([]);
+    var keys = Object.keys(rows[0]);
+    var aoa = [keys];
+    rows.forEach(function(r){ aoa.push(keys.map(function(k){return r[k];})); });
+    return aoa_to_sheet(aoa);
+  }
+
+  // ── Build shared strings table ──
+  function buildSST(sheets) {
+    var map={}, arr=[], idx=0;
+    Object.values(sheets).forEach(function(ws){
+      Object.keys(ws).forEach(function(addr){
+        if(addr[0]==='!') return;
+        var c=ws[addr];
+        if(c.t==='s' && !(c.v in map)){map[c.v]=idx++;arr.push(c.v);}
+      });
+    });
+    return {map:map, arr:arr};
+  }
+
+  // ── Render a worksheet to XML ──
+  function wsToXml(ws, sst) {
+    var ref = ws['!ref']||'A1';
+    var freeze = ws['!freeze'];
+    var cols = ws['!cols'];
+    var xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    xml += '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+    xml += ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
+    if(cols){
+      xml+='<cols>';
+      cols.forEach(function(c,i){
+        if(c&&c.wch) xml+='<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+c.wch+'" customWidth="1"/>';
+      });
+      xml+='</cols>';
+    }
+    if(freeze){
+      xml+='<sheetViews><sheetView workbookViewId="0">';
+      xml+='<pane ySplit="'+(freeze.ySplit||0)+'" xSplit="'+(freeze.xSplit||0)+'" topLeftCell="'+colName(freeze.xSplit||0)+((freeze.ySplit||0)+1)+'" activePane="bottomLeft" state="frozen"/>';
+      xml+='</sheetViews>';
+    }
+    xml += '<sheetData>';
+    // parse ref to get row range
+    var parts = ref.split(':');
+    var endRef = parts[1]||parts[0];
+    var maxRow = parseInt(endRef.replace(/[A-Z]+/,''));
+    for(var r=1;r<=maxRow;r++){
+      var rowCells='';
+      var maxC=0;
+      Object.keys(ws).forEach(function(addr){
+        if(addr[0]==='!') return;
+        var ri=parseInt(addr.replace(/[A-Z]+/,''));
+        var ci=0; var s=addr.replace(/[0-9]+/,'');
+        for(var x=0;x<s.length;x++) ci=ci*26+(s.charCodeAt(x)-64);
+        if(ri===r && ci>maxC) maxC=ci;
+      });
+      // collect cells in this row
+      var cells=[];
+      for(var ci2=1;ci2<=maxC+1;ci2++){
+        var addr2=colName(ci2-1)+r;
+        var cell=ws[addr2];
+        if(!cell) continue;
+        if(cell.t==='n'){
+          cells.push('<c r="'+addr2+'" t="n"><v>'+cell.v+'</v></c>');
+        } else {
+          var si=sst.map[cell.v];
+          cells.push('<c r="'+addr2+'" t="s"><v>'+si+'</v></c>');
+        }
+      }
+      if(cells.length) rowCells='<row r="'+r+'">'+cells.join('')+'</row>';
+      xml+=rowCells;
+    }
+    xml+='</sheetData></worksheet>';
+    return xml;
+  }
+
+  // ── Build [Content_Types].xml ──
+  function contentTypes(sheetNames) {
+    var xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    xml+='<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">';
+    xml+='<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>';
+    xml+='<Default Extension="xml" ContentType="application/xml"/>';
+    xml+='<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>';
+    xml+='<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>';
+    sheetNames.forEach(function(n,i){
+      xml+='<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+    });
+    xml+='</Types>';
+    return xml;
+  }
+
+  // ── Build workbook.xml ──
+  function workbookXml(sheetNames) {
+    var xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    xml+='<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
+    xml+='<sheets>';
+    sheetNames.forEach(function(n,i){
+      xml+='<sheet name="'+esc(n)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+2)+'"/>';
+    });
+    xml+='</sheets></workbook>';
+    return xml;
+  }
+
+  // ── Build xl/_rels/workbook.xml.rels ──
+  function workbookRels(sheetNames) {
+    var xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    xml+='<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+    xml+='<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>';
+    sheetNames.forEach(function(n,i){
+      xml+='<Relationship Id="rId'+(i+2)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>';
+    });
+    xml+='</Relationships>';
+    return xml;
+  }
+
+  // ── Build sharedStrings.xml ──
+  function sstXml(sst) {
+    var xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    xml+='<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+sst.arr.length+'" uniqueCount="'+sst.arr.length+'">';
+    sst.arr.forEach(function(s){ xml+='<si><t xml:space="preserve">'+esc(s)+'</t></si>'; });
+    xml+='</sst>';
+    return xml;
+  }
+
+  function str2u8(s){ return new Uint8Array(utf8(s)); }
+
+  // ── Public API ──
+  function book_new(){ return {SheetNames:[], Sheets:{}}; }
+  function book_append_sheet(wb, ws, name){ wb.SheetNames.push(name); wb.Sheets[name]=ws; }
+
+  function writeFile(wb, filename) {
+    var sheetNames = wb.SheetNames;
+    var sst = buildSST(wb.Sheets);
+    var files = [];
+    files.push({name:'[Content_Types].xml',      data:str2u8(contentTypes(sheetNames))});
+    files.push({name:'_rels/.rels',              data:str2u8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')});
+    files.push({name:'xl/workbook.xml',          data:str2u8(workbookXml(sheetNames))});
+    files.push({name:'xl/_rels/workbook.xml.rels',data:str2u8(workbookRels(sheetNames))});
+    files.push({name:'xl/sharedStrings.xml',     data:str2u8(sstXml(sst))});
+    sheetNames.forEach(function(n,i){
+      files.push({name:'xl/worksheets/sheet'+(i+1)+'.xml', data:str2u8(wsToXml(wb.Sheets[n],sst))});
+    });
+    var zip = buildZip(files);
+    var blob = new Blob([zip], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href=url; a.download=filename; a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  }
+
+  return { utils:{aoa_to_sheet:aoa_to_sheet, json_to_sheet:json_to_sheet, book_new:book_new, book_append_sheet:book_append_sheet}, book_new:book_new, book_append_sheet:book_append_sheet, writeFile:writeFile, read:function(){} };
+})();
+</script>
 <style>
 :root {
   --bg: #ffffff;
@@ -34,12 +308,14 @@ body { background: var(--bg); color: var(--text); font-family: 'Source Sans 3', 
 .topbar {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 0 24px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   gap: 0;
-  height: 56px;
+  min-height: 56px;
+  height: auto;
   flex-shrink: 0;
+  overflow: visible;
 }
 .logo {
   font-family: 'Playfair Display', serif;
@@ -52,7 +328,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Source Sans 3', 
 }
 
 /* ── MAIN TABS ── */
-.main-tabs { display: flex; gap: 2px; }
+.main-tabs { display: flex; gap: 2px; flex-shrink: 1; min-width: 0; overflow: hidden; }
 .main-tab {
   padding: 0 20px;
   height: 56px;
@@ -71,7 +347,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Source Sans 3', 
 .main-tab:hover { color: var(--text); }
 .main-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
 
-.topbar-right { margin-left: auto; display: flex; gap: 8px; }
+.topbar-right { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
 
 /* ── CONTENT ── */
 .content { flex: 1; overflow-y: auto; padding: 24px; }
@@ -152,7 +428,7 @@ textarea { resize: vertical; min-height: 60px; }
 
 /* ── STATUS COLORS ── */
 .status-in-process   { background: rgba(0,0,0,.06); color: #555; border: 1px solid rgba(0,0,0,.12); }
-.status-op-pending   { background: rgba(217,119,6,.12); color: var(--yellow); border: 1px solid rgba(217,119,6,.3); }
+.status-op-pending   { background: #fef08a; color: #713f12; border: 1px solid #fde047; }
 .status-deal-close   { background: rgba(37,99,235,.1); color: var(--blue); border: 1px solid rgba(37,99,235,.25); }
 .status-dead-deal    { background: rgba(107,114,128,.1); color: var(--grey); border: 1px solid rgba(107,114,128,.2); }
 .status-done-pay     { background: rgba(22,163,74,.1); color: var(--green); border: 1px solid rgba(22,163,74,.25); }
@@ -329,6 +605,7 @@ tr:hover td { background: var(--surface2); }
       <button class="main-tab" onclick="showTab('accounting')">Accounting</button>
     </div>
     <div class="topbar-right">
+      <button class="btn btn-gold btn-sm" onclick="exportToExcel()" title="Export all data to a formatted Excel report">📊 Export to Excel</button>
       <button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ Backup</button>
       <label>
         <div class="btn btn-ghost btn-sm" style="cursor:pointer;">⬆ Restore</div>
@@ -377,6 +654,7 @@ tr:hover td { background: var(--surface2); }
   <button class="mob-tab active" onclick="showTab('deal');setMobTab(this)"><span class="mob-icon">📋</span>Deals</button>
   <button class="mob-tab" onclick="showTab('expense');setMobTab(this)"><span class="mob-icon">💸</span>Expenses</button>
   <button class="mob-tab" onclick="showTab('accounting');setMobTab(this)"><span class="mob-icon">📊</span>Accounting</button>
+  <button class="mob-tab" onclick="exportToExcel()"><span class="mob-icon">📊</span>Export</button>
 </nav>
 
 <!-- ══════════ MODALS ══════════ -->
@@ -719,6 +997,7 @@ function renderDeals() {
     const deals = byMonth[mi];
     const rows = deals.map(d => {
       const st = STATUS_MAP[d.status] || STATUS_MAP['in-process'];
+      const m = v => v ? '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
       return `<tr class="deal-row" onclick="viewDeal('${d.id}')">
         <td><span class="status-pill ${st.cls}">${st.label}</span></td>
         <td style="font-weight:700;color:var(--gold);font-family:'Playfair Display',serif;">${d.num || '—'}</td>
@@ -726,10 +1005,26 @@ function renderDeals() {
         <td style="font-weight:600;">${d.client || '—'}</td>
         <td>${d.address || '—'}${d.apt ? ' #'+d.apt : ''}</td>
         <td>${d.mgmt || '—'}</td>
-        <td style="color:var(--green);">${d.fee ? '$'+Number(d.fee).toLocaleString() : '—'}</td>
+        <td>${d.bldg || '—'}</td>
+        <td>${d.movein || '—'}</td>
+        <td style="color:var(--muted);">${d.rent ? '$'+Number(d.rent).toLocaleString() : '—'}</td>
+        <td style="color:var(--green);font-weight:600;">${m(d.fee)}</td>
+        <td>${d.feePaidOn || '—'}</td>
+        <td>${d.feeByClient ? '$'+Number(d.feeByClient).toLocaleString() : '—'}</td>
+        <td>${d.opMgmt ? '$'+Number(d.opMgmt).toLocaleString() : '—'}</td>
         <td>${d.agent || '—'}</td>
-        <td style="color:var(--gold);">${d.net ? '$'+Number(d.net).toLocaleString() : '—'}</td>
-        <td style="white-space:normal;max-width:120px;font-size:.75rem;color:var(--muted);">${(d.notes||'').substring(0,40)}${d.notes&&d.notes.length>40?'…':''}</td>
+        <td>${m(d.gross)}</td>
+        <td>${d.tip ? '$'+Number(d.tip).toLocaleString() : '—'}</td>
+        <td>${d.tipReimb ? '$'+Number(d.tipReimb).toLocaleString() : '—'}</td>
+        <td style="color:var(--gold);font-weight:700;">${m(d.net)}</td>
+        <td>${d.agentPay ? '$'+Number(d.agentPay).toLocaleString() : '—'}</td>
+        <td>${d.check || '—'}</td>
+        <td>${d.agent2Pay ? '$'+Number(d.agent2Pay).toLocaleString() : '—'}</td>
+        <td>${d.check2 || '—'}</td>
+        <td>${d.dose || '—'}</td>
+        <td style="color:var(--muted);font-size:.75rem;">${d.tenantPhone || '—'}</td>
+        <td style="color:var(--muted);font-size:.75rem;">${d.tenantEmail || '—'}</td>
+        <td style="white-space:normal;max-width:140px;font-size:.75rem;color:var(--muted);">${(d.notes||'').substring(0,50)}${d.notes&&d.notes.length>50?'…':''}</td>
       </tr>`;
     }).join('');
 
@@ -740,7 +1035,11 @@ function renderDeals() {
           <table>
             <thead><tr>
               <th>Status</th><th>Deal #</th><th>Date</th><th>Client</th><th>Address</th>
-              <th>MGMT</th><th>Fee</th><th>Agent</th><th>NET</th><th>Notes</th>
+              <th>MGMT</th><th>BLDG</th><th>Move-In</th><th>Rent</th>
+              <th>Fee</th><th>Fee Paid On</th><th>Fee by Client</th><th>Op by MGMT</th>
+              <th>Agent</th><th>Gross COMM</th><th>TIP</th><th>TIP Reimb</th><th>NET</th>
+              <th>Agent Pay 1</th><th>Check 1</th><th>Agent Pay 2</th><th>Check 2</th>
+              <th>DOSE</th><th>Phone</th><th>Email</th><th>Notes</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -1240,6 +1539,211 @@ function openAgentList() {
         <td>${a.started ? fmtDate(a.started) : '—'}</td>
       </tr>`).join('');
   openModal('modal-agent-list');
+}
+
+// ══════════ EXPORT TO EXCEL (3 TABS: Deals Control, Expense Control, Accounting) ══════════
+function exportToExcel() {
+  const wb = XLSX.utils.book_new();
+
+  // ── HELPER: apply column widths ──
+  function setColWidths(ws, widths) {
+    ws['!cols'] = widths.map(w => ({ wch: w }));
+  }
+
+  // ── HELPER: style header row (bold, gold background) ──
+  // SheetJS community edition doesn't support cell styles, but we can set freeze panes and col widths.
+
+  // ══ TAB 1: DEALS CONTROL ══
+  // Sort all deals: by year desc, then month asc, then deal number
+  const allDeals = [...db.deals].sort((a, b) => {
+    const da = a.date || '', db2 = b.date || '';
+    if (da < db2) return -1;
+    if (da > db2) return 1;
+    return String(a.num||'').localeCompare(String(b.num||''));
+  });
+
+  const STATUS_LABELS = {
+    'in-process': 'In Process',
+    'op-pending':  'OP Pending',
+    'deal-close':  'Deal Close',
+    'dead-deal':   'Dead Deal',
+    'done-pay':    'Done / Pay Agent',
+  };
+
+  // Build deals rows — one deal = one row, all fields in logical order
+  const dealHeaders = [
+    'Deal Control #', 'Date', 'Status', 'Client Name',
+    'Address', 'Apt', 'MGMT', 'BLDG Code',
+    'Move-In Date', 'Rent ($)', 'FEE ($)', 'Fee Paid On',
+    'Fee Paid By Client ($)', 'Op Paid By MGMT ($)',
+    'Agent', 'Gross COMM ($)', 'TIP ($)', 'TIP Reimbursed ($)', 'NET ($)',
+    'Agent Pay 1 ($)', 'Check # 1',
+    'Agent Pay 2 ($)', 'Check # 2',
+    'DOSE', 'Tenant Phone', 'Tenant Email', 'Notes'
+  ];
+
+  const dealData = allDeals.map(d => [
+    d.num || '',
+    d.date || '',
+    STATUS_LABELS[d.status] || d.status || '',
+    d.client || '',
+    d.address || '',
+    d.apt || '',
+    d.mgmt || '',
+    d.bldg || '',
+    d.movein || '',
+    d.rent ? Number(d.rent) : '',
+    d.fee ? Number(d.fee) : '',
+    d.feePaidOn || '',
+    d.feeByClient ? Number(d.feeByClient) : '',
+    d.opMgmt ? Number(d.opMgmt) : '',
+    d.agent || '',
+    d.gross ? Number(d.gross) : '',
+    d.tip ? Number(d.tip) : '',
+    d.tipReimb ? Number(d.tipReimb) : '',
+    d.net ? Number(d.net) : '',
+    d.agentPay ? Number(d.agentPay) : '',
+    d.check || '',
+    d.agent2Pay ? Number(d.agent2Pay) : '',
+    d.check2 || '',
+    d.dose || '',
+    d.tenantPhone || '',
+    d.tenantEmail || '',
+    d.notes || ''
+  ]);
+
+  const dealsSheet = XLSX.utils.aoa_to_sheet([dealHeaders, ...dealData]);
+  dealsSheet['!freeze'] = { xSplit: 0, ySplit: 1 }; // freeze header row
+  setColWidths(dealsSheet, [14,12,16,20,28,6,18,10,12,10,10,12,18,18,16,14,10,16,10,14,10,14,10,10,14,24,30]);
+  XLSX.utils.book_append_sheet(wb, dealsSheet, 'Deals Control');
+
+  // ══ TAB 2: EXPENSE CONTROL ══
+  // Rows: category x months, with notes row, plus column totals
+  // Format: Category | Jan | Feb | ... | Dec | Annual Total
+  const allExpYears = [...db.expenseYears].sort();
+
+  // Build one block per year separated by a blank row + year header
+  const expRows = [];
+  allExpYears.forEach(y => {
+    // Year label row
+    expRows.push([`── ${y} ──`, ...MONTHS_SHORT.map(m => `${m} ${y}`), 'Annual Total']);
+
+    EXP_ROWS.forEach((cat, ri) => {
+      const monthVals = [];
+      let rowTotal = 0;
+      for (let mi = 0; mi < 12; mi++) {
+        const v = db.expenses[getExpKey(y, ri, mi)] || 0;
+        monthVals.push(v > 0 ? v : '');
+        rowTotal += v;
+      }
+      expRows.push([cat, ...monthVals, rowTotal > 0 ? rowTotal : '']);
+
+      // Notes row
+      const noteVals = MONTHS_SHORT.map((_, mi) => {
+        const note = db.expenses[getExpNoteKey(y, ri, mi)] || '';
+        return note;
+      });
+      const hasAnyNote = noteVals.some(n => n);
+      if (hasAnyNote) {
+        expRows.push([`  ↳ notes`, ...noteVals, '']);
+      }
+    });
+
+    // Column totals row
+    const colTotals = [];
+    for (let mi = 0; mi < 12; mi++) {
+      let col = 0;
+      for (let ri = 0; ri < EXP_ROWS.length; ri++) col += db.expenses[getExpKey(y, ri, mi)] || 0;
+      colTotals.push(col > 0 ? col : '');
+    }
+    const grandTotal = allExpYears.length > 0 ? (() => {
+      let g = 0;
+      for (let ri = 0; ri < EXP_ROWS.length; ri++)
+        for (let mi = 0; mi < 12; mi++) g += db.expenses[getExpKey(y, ri, mi)] || 0;
+      return g > 0 ? g : '';
+    })() : '';
+    expRows.push(['MONTHLY TOTAL', ...colTotals, grandTotal]);
+    expRows.push([]); // blank separator between years
+  });
+
+  const expHeaders = ['Category', ...MONTHS_SHORT, 'Annual Total'];
+  const expSheet = XLSX.utils.aoa_to_sheet([expHeaders, ...expRows]);
+  expSheet['!freeze'] = { xSplit: 1, ySplit: 1 }; // freeze category column + header
+  setColWidths(expSheet, [22, 9,9,9,9,9,9,9,9,9,9,9,9, 14]);
+  XLSX.utils.book_append_sheet(wb, expSheet, 'Expense Control');
+
+  // ══ TAB 3: ACCOUNTING ══
+  // Section 1: Agent payments — each payment on its own row
+  // Section 2: Summary — agent totals per year
+  const accRows = [];
+
+  // ── Agent Payments Detail ──
+  accRows.push(['AGENT PAYMENTS DETAIL']);
+  accRows.push(['Agent Name', 'SS #', 'Address', 'Started', 'Year', 'Payment Date', 'Check #', 'Amount ($)']);
+
+  db.agents.forEach(agent => {
+    const payments = [...(agent.payments || [])].sort((a,b) => (a.date||'').localeCompare(b.date||''));
+    if (payments.length === 0) {
+      accRows.push([agent.name, agent.ss||'', agent.address||'', agent.started||'', '', '—', '—', '']);
+    } else {
+      payments.forEach((p, i) => {
+        const yr = p.date ? new Date(p.date).getFullYear() : '';
+        accRows.push([
+          i === 0 ? agent.name : '',           // agent name only on first row
+          i === 0 ? (agent.ss || '') : '',
+          i === 0 ? (agent.address || '') : '',
+          i === 0 ? (agent.started || '') : '',
+          yr,
+          p.date || '',
+          p.check || '',
+          parseFloat(p.amount) || 0
+        ]);
+      });
+      // Agent subtotal row
+      const agTotal = payments.reduce((s,p) => s + (parseFloat(p.amount)||0), 0);
+      accRows.push(['', '', '', '', '', '', `${agent.name} — TOTAL`, agTotal]);
+    }
+    accRows.push([]); // blank row between agents
+  });
+
+  // ── Summary by Agent & Year ──
+  accRows.push([]);
+  accRows.push(['SUMMARY — TOTAL PAID PER AGENT PER YEAR']);
+
+  const allAccYears = [...new Set(
+    db.agents.flatMap(a => (a.payments||[]).map(p => p.date ? new Date(p.date).getFullYear() : null).filter(Boolean))
+  )].sort();
+
+  if (allAccYears.length > 0) {
+    accRows.push(['Agent', ...allAccYears.map(y => `${y} Total ($)`), 'Grand Total ($)']);
+    db.agents.forEach(agent => {
+      const yearTotals = allAccYears.map(y =>
+        (agent.payments||[]).filter(p => p.date && new Date(p.date).getFullYear() === y)
+          .reduce((s,p) => s + (parseFloat(p.amount)||0), 0)
+      );
+      const grandTotal = yearTotals.reduce((s,v) => s+v, 0);
+      accRows.push([agent.name, ...yearTotals.map(v => v||''), grandTotal||'']);
+    });
+
+    // Year column totals
+    const yearColTotals = allAccYears.map(y =>
+      db.agents.reduce((s, agent) =>
+        s + (agent.payments||[]).filter(p => p.date && new Date(p.date).getFullYear() === y)
+              .reduce((s2,p) => s2 + (parseFloat(p.amount)||0), 0), 0)
+    );
+    const overallTotal = yearColTotals.reduce((s,v) => s+v, 0);
+    accRows.push(['TOTAL ALL AGENTS', ...yearColTotals.map(v => v||''), overallTotal||'']);
+  }
+
+  const accSheet = XLSX.utils.aoa_to_sheet(accRows);
+  accSheet['!freeze'] = { xSplit: 0, ySplit: 2 };
+  setColWidths(accSheet, [22, 12, 26, 12, 8, 12, 14, 14, ...allAccYears.map(() => 14), 14]);
+  XLSX.utils.book_append_sheet(wb, accSheet, 'Accounting');
+
+  // ── Download ──
+  const fileName = `Alpha-Report-${todayStr()}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  showSync('✅', `Exported: ${fileName}`);
 }
 
 // ══════════ BACKUP / RESTORE ══════════
