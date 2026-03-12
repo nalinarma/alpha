@@ -5,281 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Alpha</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
-<script>
-/* ── Inline XLSX writer (self-contained, no CDN needed) ── */
-var XLSX = (function() {
-  'use strict';
-
-  // ── Tiny UTF-8 encoder ──
-  function utf8(str) {
-    var bytes = [];
-    for (var i = 0; i < str.length; i++) {
-      var c = str.charCodeAt(i);
-      if (c < 0x80) bytes.push(c);
-      else if (c < 0x800) { bytes.push(0xC0|(c>>6), 0x80|(c&63)); }
-      else if (c < 0x10000) { bytes.push(0xE0|(c>>12), 0x80|((c>>6)&63), 0x80|(c&63)); }
-      else { bytes.push(0xF0|(c>>18),0x80|((c>>12)&63),0x80|((c>>6)&63),0x80|(c&63)); }
-    }
-    return bytes;
-  }
-
-  // ── CRC32 ──
-  var crcTable = (function(){
-    var t=new Uint32Array(256);
-    for(var i=0;i<256;i++){var c=i;for(var j=0;j<8;j++)c=c&1?(0xEDB88320^(c>>>1)):(c>>>1);t[i]=c;}
-    return t;
-  })();
-  function crc32(buf){
-    var c=0xFFFFFFFF;
-    for(var i=0;i<buf.length;i++)c=crcTable[(c^buf[i])&0xFF]^(c>>>8);
-    return (c^0xFFFFFFFF)>>>0;
-  }
-
-  // ── Write little-endian numbers ──
-  function u16(n){return [n&0xFF,(n>>8)&0xFF];}
-  function u32(n){return [n&0xFF,(n>>8)&0xFF,(n>>16)&0xFF,(n>>24)&0xFF];}
-
-  // ── Build a ZIP file from an array of {name, data(Uint8Array)} ──
-  function buildZip(files) {
-    var centralDir = [];
-    var allBytes = [];
-    var offset = 0;
-
-    files.forEach(function(f) {
-      var nameBytes = utf8(f.name);
-      var data = f.data; // Uint8Array
-      var crc = crc32(data);
-      var localHeader = [].concat(
-        [0x50,0x4B,0x03,0x04], // local file header sig
-        u16(20),               // version needed
-        u16(0),                // flags
-        u16(0),                // compression: stored
-        u16(0), u16(0),        // mod time/date
-        u32(crc),
-        u32(data.length),
-        u32(data.length),
-        u16(nameBytes.length),
-        u16(0),                // extra field len
-        nameBytes
-      );
-      var localStart = offset;
-      allBytes = allBytes.concat(localHeader, Array.from(data));
-      offset += localHeader.length + data.length;
-
-      centralDir = centralDir.concat(
-        [0x50,0x4B,0x01,0x02], // central dir sig
-        u16(20), u16(20),      // version made / needed
-        u16(0), u16(0),        // flags, compression
-        u16(0), u16(0),        // mod time/date
-        u32(crc),
-        u32(data.length),
-        u32(data.length),
-        u16(nameBytes.length),
-        u16(0), u16(0),        // extra, comment len
-        u16(0), u16(0),        // disk start, int attrs
-        u32(0),                // ext attrs
-        u32(localStart),
-        nameBytes
-      );
-    });
-
-    var cdOffset = offset;
-    var cdSize = centralDir.length;
-    var eocd = [].concat(
-      [0x50,0x4B,0x05,0x06], // EOCD sig
-      u16(0), u16(0),        // disk numbers
-      u16(files.length), u16(files.length),
-      u32(cdSize), u32(cdOffset),
-      u16(0)                 // comment len
-    );
-    var all = new Uint8Array(allBytes.concat(centralDir, eocd));
-    return all;
-  }
-
-  // ── XML escape ──
-  function esc(v) {
-    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
-  }
-
-  // ── Column index to letter (0=A, 25=Z, 26=AA …) ──
-  function colName(n) {
-    var s=''; n++;
-    while(n>0){s=String.fromCharCode(64+(n%26||26))+s;n=Math.floor((n-(n%26||26))/26);}
-    return s;
-  }
-
-  // ── Convert array-of-arrays to a sheet object ──
-  function aoa_to_sheet(aoa) {
-    var ws = {'!ref':'', '!cols':null, '!freeze':null};
-    var maxC=0, maxR=aoa.length;
-    aoa.forEach(function(row,ri){
-      if(!Array.isArray(row)) return;
-      row.forEach(function(val,ci){
-        if(ci>maxC) maxC=ci;
-        var addr = colName(ci)+(ri+1);
-        if(val===null||val===undefined||val==='') return;
-        if(typeof val==='number') ws[addr]={t:'n',v:val};
-        else ws[addr]={t:'s',v:String(val)};
-      });
-    });
-    ws['!ref']='A1:'+colName(maxC)+(maxR||1);
-    return ws;
-  }
-
-  // ── Convert array-of-objects to sheet ──
-  function json_to_sheet(rows) {
-    if(!rows||!rows.length) return aoa_to_sheet([]);
-    var keys = Object.keys(rows[0]);
-    var aoa = [keys];
-    rows.forEach(function(r){ aoa.push(keys.map(function(k){return r[k];})); });
-    return aoa_to_sheet(aoa);
-  }
-
-  // ── Build shared strings table ──
-  function buildSST(sheets) {
-    var map={}, arr=[], idx=0;
-    Object.values(sheets).forEach(function(ws){
-      Object.keys(ws).forEach(function(addr){
-        if(addr[0]==='!') return;
-        var c=ws[addr];
-        if(c.t==='s' && !(c.v in map)){map[c.v]=idx++;arr.push(c.v);}
-      });
-    });
-    return {map:map, arr:arr};
-  }
-
-  // ── Render a worksheet to XML ──
-  function wsToXml(ws, sst) {
-    var ref = ws['!ref']||'A1';
-    var freeze = ws['!freeze'];
-    var cols = ws['!cols'];
-    var xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-    xml += '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
-    xml += ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
-    if(cols){
-      xml+='<cols>';
-      cols.forEach(function(c,i){
-        if(c&&c.wch) xml+='<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+c.wch+'" customWidth="1"/>';
-      });
-      xml+='</cols>';
-    }
-    if(freeze){
-      xml+='<sheetViews><sheetView workbookViewId="0">';
-      xml+='<pane ySplit="'+(freeze.ySplit||0)+'" xSplit="'+(freeze.xSplit||0)+'" topLeftCell="'+colName(freeze.xSplit||0)+((freeze.ySplit||0)+1)+'" activePane="bottomLeft" state="frozen"/>';
-      xml+='</sheetViews>';
-    }
-    xml += '<sheetData>';
-    // parse ref to get row range
-    var parts = ref.split(':');
-    var endRef = parts[1]||parts[0];
-    var maxRow = parseInt(endRef.replace(/[A-Z]+/,''));
-    for(var r=1;r<=maxRow;r++){
-      var rowCells='';
-      var maxC=0;
-      Object.keys(ws).forEach(function(addr){
-        if(addr[0]==='!') return;
-        var ri=parseInt(addr.replace(/[A-Z]+/,''));
-        var ci=0; var s=addr.replace(/[0-9]+/,'');
-        for(var x=0;x<s.length;x++) ci=ci*26+(s.charCodeAt(x)-64);
-        if(ri===r && ci>maxC) maxC=ci;
-      });
-      // collect cells in this row
-      var cells=[];
-      for(var ci2=1;ci2<=maxC+1;ci2++){
-        var addr2=colName(ci2-1)+r;
-        var cell=ws[addr2];
-        if(!cell) continue;
-        if(cell.t==='n'){
-          cells.push('<c r="'+addr2+'" t="n"><v>'+cell.v+'</v></c>');
-        } else {
-          var si=sst.map[cell.v];
-          cells.push('<c r="'+addr2+'" t="s"><v>'+si+'</v></c>');
-        }
-      }
-      if(cells.length) rowCells='<row r="'+r+'">'+cells.join('')+'</row>';
-      xml+=rowCells;
-    }
-    xml+='</sheetData></worksheet>';
-    return xml;
-  }
-
-  // ── Build [Content_Types].xml ──
-  function contentTypes(sheetNames) {
-    var xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-    xml+='<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">';
-    xml+='<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>';
-    xml+='<Default Extension="xml" ContentType="application/xml"/>';
-    xml+='<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>';
-    xml+='<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>';
-    sheetNames.forEach(function(n,i){
-      xml+='<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
-    });
-    xml+='</Types>';
-    return xml;
-  }
-
-  // ── Build workbook.xml ──
-  function workbookXml(sheetNames) {
-    var xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-    xml+='<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
-    xml+='<sheets>';
-    sheetNames.forEach(function(n,i){
-      xml+='<sheet name="'+esc(n)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+2)+'"/>';
-    });
-    xml+='</sheets></workbook>';
-    return xml;
-  }
-
-  // ── Build xl/_rels/workbook.xml.rels ──
-  function workbookRels(sheetNames) {
-    var xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-    xml+='<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
-    xml+='<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>';
-    sheetNames.forEach(function(n,i){
-      xml+='<Relationship Id="rId'+(i+2)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>';
-    });
-    xml+='</Relationships>';
-    return xml;
-  }
-
-  // ── Build sharedStrings.xml ──
-  function sstXml(sst) {
-    var xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-    xml+='<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+sst.arr.length+'" uniqueCount="'+sst.arr.length+'">';
-    sst.arr.forEach(function(s){ xml+='<si><t xml:space="preserve">'+esc(s)+'</t></si>'; });
-    xml+='</sst>';
-    return xml;
-  }
-
-  function str2u8(s){ return new Uint8Array(utf8(s)); }
-
-  // ── Public API ──
-  function book_new(){ return {SheetNames:[], Sheets:{}}; }
-  function book_append_sheet(wb, ws, name){ wb.SheetNames.push(name); wb.Sheets[name]=ws; }
-
-  function writeFile(wb, filename) {
-    var sheetNames = wb.SheetNames;
-    var sst = buildSST(wb.Sheets);
-    var files = [];
-    files.push({name:'[Content_Types].xml',      data:str2u8(contentTypes(sheetNames))});
-    files.push({name:'_rels/.rels',              data:str2u8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')});
-    files.push({name:'xl/workbook.xml',          data:str2u8(workbookXml(sheetNames))});
-    files.push({name:'xl/_rels/workbook.xml.rels',data:str2u8(workbookRels(sheetNames))});
-    files.push({name:'xl/sharedStrings.xml',     data:str2u8(sstXml(sst))});
-    sheetNames.forEach(function(n,i){
-      files.push({name:'xl/worksheets/sheet'+(i+1)+'.xml', data:str2u8(wsToXml(wb.Sheets[n],sst))});
-    });
-    var zip = buildZip(files);
-    var blob = new Blob([zip], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href=url; a.download=filename; a.click();
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
-  }
-
-  return { utils:{aoa_to_sheet:aoa_to_sheet, json_to_sheet:json_to_sheet, book_new:book_new, book_append_sheet:book_append_sheet}, book_new:book_new, book_append_sheet:book_append_sheet, writeFile:writeFile, read:function(){} };
-})();
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root {
   --bg: #ffffff;
@@ -501,6 +227,20 @@ tr:hover td { background: var(--surface2); }
   font-family: 'Source Sans 3', sans-serif; outline: none;
 }
 .exp-input-cell input:focus { background: rgba(201,168,76,.07); }
+.exp-proj-cell {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 0; min-width: 90px;
+  background: var(--surface2);
+}
+.exp-proj-cell input {
+  width: 100%; padding: 7px 8px;
+  background: transparent; border: none;
+  color: var(--text); font-size: .8rem; text-align: right;
+  font-family: 'Source Sans 3', sans-serif; outline: none;
+  font-weight: 700;
+}
+.exp-proj-cell input:focus { background: rgba(201,168,76,.07); }
 .exp-row-total {
   padding: 7px 12px;
   font-weight: 700; color: var(--green);
@@ -1251,6 +991,43 @@ function getExpKey(year, rowIdx, monthIdx) {
 function getExpNoteKey(year, rowIdx, monthIdx) {
   return `expnote_${year}_${rowIdx}_${monthIdx}`;
 }
+function expCellFocus(el, year, type, ri, mi) {
+  // Show raw number for editing
+  const key = type === 'proj' ? getExpProjKey(year, ri) : getExpKey(year, ri, mi);
+  const raw = db.expenses[key] || '';
+  el.value = raw !== '' ? raw : '';
+}
+
+function expCellBlur(el, year, type, ri, mi) {
+  const v = parseFloat(el.value);
+  if (type === 'proj') {
+    saveExpProj(year, ri, el.value);
+    const stored = db.expenses[getExpProjKey(year, ri)];
+    el.value = stored > 0 ? fmtExpNum(stored) : '';
+  } else {
+    saveExpCell(year, ri, mi, el.value);
+    const stored = db.expenses[getExpKey(year, ri, mi)];
+    el.value = stored > 0 ? fmtExpNum(stored) : '';
+    updateExpTotals(year, ri, mi);
+  }
+}
+
+function fmtExpNum(n) {
+  const num = parseFloat(n);
+  if (isNaN(num) || num === 0) return '';
+  return num.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function getExpProjKey(year, rowIdx) {
+  return `expproj_${year}_${rowIdx}`;
+}
+function saveExpProj(year, rowIdx, value) {
+  const key = getExpProjKey(year, rowIdx);
+  const val = parseFloat(value);
+  if (!isNaN(val) && val > 0) db.expenses[key] = val;
+  else delete db.expenses[key];
+  saveDB();
+}
 
 function saveExpNote(year, rowIdx, monthIdx, value) {
   const key = getExpNoteKey(year, rowIdx, monthIdx);
@@ -1300,6 +1077,7 @@ function renderExpenses() {
   <table class="exp-table">
     <thead><tr>
       <th>Category</th>
+      <th style="min-width:90px;">Projected</th>
       ${MONTHS_SHORT.map(m => `<th>${m}</th>`).join('')}
       <th>Total</th>
     </tr></thead>
@@ -1310,15 +1088,24 @@ function renderExpenses() {
     let rowTotal = 0;
     for (let m = 0; m < 12; m++) rowTotal += db.expenses[getExpKey(y, ri, m)] || 0;
 
+    const projKey = getExpProjKey(y, ri);
+    const projVal = db.expenses[projKey] || '';
     html += `<tr>
-      <td class="exp-cat-cell">${row}</td>`;
+      <td class="exp-cat-cell">${row}</td>
+      <td class="exp-proj-cell">
+        <input type="text" value="${projVal ? fmtExpNum(projVal) : ''}" placeholder=""
+          onfocus="expCellFocus(this, ${y}, 'proj', ${ri}, -1)"
+          onblur="expCellBlur(this, ${y}, 'proj', ${ri}, -1)"
+          id="exp-proj-${y}-${ri}">
+      </td>`;
 
     for (let mi = 0; mi < 12; mi++) {
       const key = getExpKey(y, ri, mi);
       const val = db.expenses[key] || '';
       html += `<td class="exp-input-cell">
-        <input type="number" min="0" step="0.01" value="${val}" placeholder=""
-          onchange="saveExpCell(${y},${ri},${mi},this.value)"
+        <input type="text" value="${val ? fmtExpNum(val) : ''}" placeholder=""
+          onfocus="expCellFocus(this, ${y}, 'cell', ${ri}, ${mi})"
+          onblur="expCellBlur(this, ${y}, 'cell', ${ri}, ${mi})"
           id="exp-cell-${y}-${ri}-${mi}">
       </td>`;
     }
@@ -1328,7 +1115,8 @@ function renderExpenses() {
 
     // Notes row below each category
     html += `<tr class="exp-note-row">
-      <td class="exp-note-label">↳ notes</td>`;
+      <td class="exp-note-label">↳ notes</td>
+      <td class="exp-note-cell"></td>`;
     for (let mi = 0; mi < 12; mi++) {
       const noteKey = getExpNoteKey(y, ri, mi);
       const noteVal = (db.expenses[noteKey] || '').replace(/"/g, '&quot;');
@@ -1343,7 +1131,8 @@ function renderExpenses() {
 
   // Footer: monthly column totals
   html += `</tbody><tfoot><tr>
-    <td class="exp-footer-label">Monthly Total</td>`;
+    <td class="exp-footer-label">Monthly Total</td>
+    <td class="exp-col-total"></td>`;
 
   let grand = 0;
   for (let mi = 0; mi < 12; mi++) {
@@ -1644,7 +1433,7 @@ function exportToExcel() {
   const expRows = [];
   allExpYears.forEach(y => {
     // Year label row
-    expRows.push([`── ${y} ──`, ...MONTHS_SHORT.map(m => `${m} ${y}`), 'Annual Total']);
+    expRows.push([`── ${y} ──`, 'Projected', ...MONTHS_SHORT.map(m => `${m} ${y}`), 'Annual Total']);
 
     EXP_ROWS.forEach((cat, ri) => {
       const monthVals = [];
@@ -1654,7 +1443,8 @@ function exportToExcel() {
         monthVals.push(v > 0 ? v : '');
         rowTotal += v;
       }
-      expRows.push([cat, ...monthVals, rowTotal > 0 ? rowTotal : '']);
+      const projVal = db.expenses[getExpProjKey(y, ri)] || '';
+      expRows.push([cat, projVal, ...monthVals, rowTotal > 0 ? rowTotal : '']);
 
       // Notes row
       const noteVals = MONTHS_SHORT.map((_, mi) => {
@@ -1680,11 +1470,11 @@ function exportToExcel() {
         for (let mi = 0; mi < 12; mi++) g += db.expenses[getExpKey(y, ri, mi)] || 0;
       return g > 0 ? g : '';
     })() : '';
-    expRows.push(['MONTHLY TOTAL', ...colTotals, grandTotal]);
+    expRows.push(['MONTHLY TOTAL', '', ...colTotals, grandTotal]);
     expRows.push([]); // blank separator between years
   });
 
-  const expHeaders = ['Category', ...MONTHS_SHORT, 'Annual Total'];
+  const expHeaders = ['Category', 'Projected', ...MONTHS_SHORT, 'Annual Total'];
   const expSheet = XLSX.utils.aoa_to_sheet([expHeaders, ...expRows]);
   expSheet['!freeze'] = { xSplit: 1, ySplit: 1 }; // freeze category column + header
   setColWidths(expSheet, [22, 9,9,9,9,9,9,9,9,9,9,9,9, 14]);
@@ -1761,7 +1551,11 @@ function exportToExcel() {
 
   // ── Download ──
   const fileName = `Alpha-Report-${todayStr()}.xlsx`;
-  XLSX.writeFile(wb, fileName);
+  const _wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  const _blob = new Blob([_wbout], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const _url = URL.createObjectURL(_blob);
+  const _a = document.createElement('a'); _a.href=_url; _a.download=fileName; _a.click();
+  setTimeout(()=>URL.revokeObjectURL(_url),1000);
   showSync('✅', `Exported: ${fileName}`);
 }
 
@@ -1801,7 +1595,12 @@ function exportData() {
     AccYears: db.accYears.join(',')
   }]), 'Config');
 
-  XLSX.writeFile(wb, `Alpha-Backup-${todayStr()}.xlsx`);
+  const _bname = `Alpha-Backup-${todayStr()}.xlsx`;
+  const _wbout2 = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  const _blob2 = new Blob([_wbout2], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const _url2 = URL.createObjectURL(_blob2);
+  const _a2 = document.createElement('a'); _a2.href=_url2; _a2.download=_bname; _a2.click();
+  setTimeout(()=>URL.revokeObjectURL(_url2),1000);
 }
 
 function importData(event) {
